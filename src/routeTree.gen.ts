@@ -12,11 +12,13 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as PaletteRouteImport } from './routes/palette'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as SessionsIndexRouteImport } from './routes/sessions/index'
+import { Route as RunsIndexRouteImport } from './routes/runs/index'
 import { Route as McpIndexRouteImport } from './routes/mcp/index'
 import { Route as LiveIndexRouteImport } from './routes/live/index'
 import { Route as InboxIndexRouteImport } from './routes/inbox/index'
 import { Route as EvalsIndexRouteImport } from './routes/evals/index'
 import { Route as SessionsSessionIdRouteImport } from './routes/sessions/$sessionId'
+import { Route as RunsRunIdRouteImport } from './routes/runs/$runId'
 import { Route as LiveRunIdRouteImport } from './routes/live/$runId'
 
 const PaletteRoute = PaletteRouteImport.update({
@@ -32,6 +34,11 @@ const IndexRoute = IndexRouteImport.update({
 const SessionsIndexRoute = SessionsIndexRouteImport.update({
   id: '/sessions/',
   path: '/sessions/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const RunsIndexRoute = RunsIndexRouteImport.update({
+  id: '/runs/',
+  path: '/runs/',
   getParentRoute: () => rootRouteImport,
 } as any)
 const McpIndexRoute = McpIndexRouteImport.update({
@@ -59,6 +66,11 @@ const SessionsSessionIdRoute = SessionsSessionIdRouteImport.update({
   path: '/sessions/$sessionId',
   getParentRoute: () => rootRouteImport,
 } as any)
+const RunsRunIdRoute = RunsRunIdRouteImport.update({
+  id: '/runs/$runId',
+  path: '/runs/$runId',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const LiveRunIdRoute = LiveRunIdRouteImport.update({
   id: '/live/$runId',
   path: '/live/$runId',
@@ -69,22 +81,26 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/palette': typeof PaletteRoute
   '/live/$runId': typeof LiveRunIdRoute
+  '/runs/$runId': typeof RunsRunIdRoute
   '/sessions/$sessionId': typeof SessionsSessionIdRoute
   '/evals/': typeof EvalsIndexRoute
   '/inbox/': typeof InboxIndexRoute
   '/live/': typeof LiveIndexRoute
   '/mcp/': typeof McpIndexRoute
+  '/runs/': typeof RunsIndexRoute
   '/sessions/': typeof SessionsIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/palette': typeof PaletteRoute
   '/live/$runId': typeof LiveRunIdRoute
+  '/runs/$runId': typeof RunsRunIdRoute
   '/sessions/$sessionId': typeof SessionsSessionIdRoute
   '/evals': typeof EvalsIndexRoute
   '/inbox': typeof InboxIndexRoute
   '/live': typeof LiveIndexRoute
   '/mcp': typeof McpIndexRoute
+  '/runs': typeof RunsIndexRoute
   '/sessions': typeof SessionsIndexRoute
 }
 export interface FileRoutesById {
@@ -92,11 +108,13 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/palette': typeof PaletteRoute
   '/live/$runId': typeof LiveRunIdRoute
+  '/runs/$runId': typeof RunsRunIdRoute
   '/sessions/$sessionId': typeof SessionsSessionIdRoute
   '/evals/': typeof EvalsIndexRoute
   '/inbox/': typeof InboxIndexRoute
   '/live/': typeof LiveIndexRoute
   '/mcp/': typeof McpIndexRoute
+  '/runs/': typeof RunsIndexRoute
   '/sessions/': typeof SessionsIndexRoute
 }
 export interface FileRouteTypes {
@@ -105,33 +123,39 @@ export interface FileRouteTypes {
     | '/'
     | '/palette'
     | '/live/$runId'
+    | '/runs/$runId'
     | '/sessions/$sessionId'
     | '/evals/'
     | '/inbox/'
     | '/live/'
     | '/mcp/'
+    | '/runs/'
     | '/sessions/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
     | '/palette'
     | '/live/$runId'
+    | '/runs/$runId'
     | '/sessions/$sessionId'
     | '/evals'
     | '/inbox'
     | '/live'
     | '/mcp'
+    | '/runs'
     | '/sessions'
   id:
     | '__root__'
     | '/'
     | '/palette'
     | '/live/$runId'
+    | '/runs/$runId'
     | '/sessions/$sessionId'
     | '/evals/'
     | '/inbox/'
     | '/live/'
     | '/mcp/'
+    | '/runs/'
     | '/sessions/'
   fileRoutesById: FileRoutesById
 }
@@ -139,11 +163,13 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   PaletteRoute: typeof PaletteRoute
   LiveRunIdRoute: typeof LiveRunIdRoute
+  RunsRunIdRoute: typeof RunsRunIdRoute
   SessionsSessionIdRoute: typeof SessionsSessionIdRoute
   EvalsIndexRoute: typeof EvalsIndexRoute
   InboxIndexRoute: typeof InboxIndexRoute
   LiveIndexRoute: typeof LiveIndexRoute
   McpIndexRoute: typeof McpIndexRoute
+  RunsIndexRoute: typeof RunsIndexRoute
   SessionsIndexRoute: typeof SessionsIndexRoute
 }
 
@@ -168,6 +194,13 @@ declare module '@tanstack/react-router' {
       path: '/sessions'
       fullPath: '/sessions/'
       preLoaderRoute: typeof SessionsIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/runs/': {
+      id: '/runs/'
+      path: '/runs'
+      fullPath: '/runs/'
+      preLoaderRoute: typeof RunsIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/mcp/': {
@@ -205,6 +238,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SessionsSessionIdRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/runs/$runId': {
+      id: '/runs/$runId'
+      path: '/runs/$runId'
+      fullPath: '/runs/$runId'
+      preLoaderRoute: typeof RunsRunIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/live/$runId': {
       id: '/live/$runId'
       path: '/live/$runId'
@@ -219,11 +259,13 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   PaletteRoute: PaletteRoute,
   LiveRunIdRoute: LiveRunIdRoute,
+  RunsRunIdRoute: RunsRunIdRoute,
   SessionsSessionIdRoute: SessionsSessionIdRoute,
   EvalsIndexRoute: EvalsIndexRoute,
   InboxIndexRoute: InboxIndexRoute,
   LiveIndexRoute: LiveIndexRoute,
   McpIndexRoute: McpIndexRoute,
+  RunsIndexRoute: RunsIndexRoute,
   SessionsIndexRoute: SessionsIndexRoute,
 }
 export const routeTree = rootRouteImport

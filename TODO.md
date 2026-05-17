@@ -5,6 +5,13 @@
 - Evals — `docs/plans/evals.md`
 - Compare two runs side-by-side — `docs/plans/compare-runs.md`
 - MCP — `docs/plans/mcp.md`
+- Notes (free-form human notes on session/trace/span) — `docs/plans/notes.md`
+- Experiment tags — free-form string tag on spans (`agentops.tag` or reuse
+  `service.namespace`) for ad-hoc grouping while testing prompt/agent changes.
+  Promote the existing "env" filter to a "Tag" filter, pull values dynamically
+  from spans instead of hardcoding `['main','dev']`. Closest priors: Langfuse
+  `tags[]`, LangSmith `tags`, Helicone "Properties". OTel-native, no SDK
+  changes needed beyond setting the attribute at ingest.
 - HTTP API for LLM debugging — `docs/plans/http-api.md`
 - Live ingest — spans appear in the viewer as they flush from the agent's
   OTel exporter. Granularity is one span (turn / tool call), not tokens;
@@ -13,7 +20,9 @@
 - Historic data across agent versions (compare runs over time)
 
 ## Polish
-- Trace drawer is the primary session surface from the list; full session route stays Turns + Conversation without a separate Spans/Tree column.
+- Share button on session inspect — copy a deep link (`/sessions/$sessionId`) to
+  the clipboard. Small icon button in the drawer header next to the close `✕`.
+- Sessions list preview uses `SessionInspectDrawer`; full session route shares `SessionInspectLayout` (Spans + Conversation tabs).
 - Apply palette — see `docs/plans/palette.md`. Live preview at `/palette`.
   Sweep list is in the doc (~6 files). Zinc's purple-magenta tint is stock
   Tailwind v4 (hue 285°), not a config override — we lean into it.

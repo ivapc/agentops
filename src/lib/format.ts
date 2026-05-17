@@ -27,8 +27,8 @@ export function metricTone(
     if (value >= 0.1) return 'text-amber-700 dark:text-amber-300'
   }
   if (kind === 'tokens') {
-    if (value >= 100_000) return 'text-rose-700 dark:text-rose-300'
-    if (value >= 32_000) return 'text-amber-700 dark:text-amber-300'
+    if (value >= 1_000_000) return 'text-rose-700 dark:text-rose-300'
+    if (value >= 250_000) return 'text-amber-700 dark:text-amber-300'
   }
   return normal
 }

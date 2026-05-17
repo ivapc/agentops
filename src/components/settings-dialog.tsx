@@ -1,9 +1,12 @@
+import { Cog6ToothIcon, ComputerDesktopIcon, UserCircleIcon, XMarkIcon } from '@heroicons/react/16/solid'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { StatusPills } from '#/components/status-pills'
-import { Dialog } from '#/components/ui/dialog'
+import { Button } from '#/components/ui/button'
+import { Dialog, DialogTitle } from '#/components/ui/dialog'
+import { Input } from '#/components/ui/input'
 import { type ThemeMode, useTheme } from '#/hooks/use-theme'
-import { useUser } from '#/hooks/use-user'
+import { useUserId } from '#/hooks/use-user'
 import { providersQuery, setProviderFn } from '#/lib/providers-data'
 import { queryKeys } from '#/lib/query-keys'
 
@@ -11,10 +14,10 @@ const APP_VERSION = 'v0.1.0'
 
 type Section = 'general' | 'appearance' | 'account'
 
-const SECTIONS: { value: Section; label: string }[] = [
-  { value: 'general', label: 'General' },
-  { value: 'appearance', label: 'Appearance' },
-  { value: 'account', label: 'Account' },
+const SECTIONS: { value: Section; label: string; Icon: React.ComponentType<{ className?: string }> }[] = [
+  { value: 'general', label: 'General', Icon: Cog6ToothIcon },
+  { value: 'appearance', label: 'Appearance', Icon: ComputerDesktopIcon },
+  { value: 'account', label: 'Account', Icon: UserCircleIcon },
 ]
 
 interface SettingsDialogProps {
@@ -26,68 +29,107 @@ export function SettingsDialog({ open, onClose }: SettingsDialogProps) {
   const [section, setSection] = useState<Section>('general')
 
   return (
-    <Dialog open={open} onClose={onClose} size="5xl">
-      <div className="-m-(--gutter) grid min-h-[28rem] grid-cols-1 sm:min-h-[36rem] sm:grid-cols-[12rem_1fr]">
-        <aside className="border-b border-zinc-950/10 px-2 py-3 sm:border-r sm:border-b-0 sm:py-4 dark:border-white/10">
-          <div className="px-2 pb-2 text-[10px] font-medium tracking-wide text-zinc-500 uppercase dark:text-zinc-400">
-            Settings
+    <Dialog open={open} onClose={onClose} size="4xl">
+      <div className="-m-(--gutter) flex min-h-[31rem] flex-col overflow-hidden">
+        <header className="flex items-center justify-between border-b border-zinc-950/10 px-4 py-3 dark:border-white/10">
+          <div className="flex min-w-0 items-center gap-2.5">
+            <span className="flex size-8 shrink-0 items-center justify-center rounded-lg border border-zinc-950/10 bg-zinc-50 text-zinc-600 dark:border-white/10 dark:bg-white/[0.04] dark:text-zinc-300">
+              <Cog6ToothIcon className="size-4 fill-current" />
+            </span>
+            <div className="min-w-0">
+              <DialogTitle className="text-sm/5">Settings</DialogTitle>
+              <p className="truncate text-xs text-zinc-500 dark:text-zinc-400">Workspace preferences and identity</p>
+            </div>
           </div>
-          <nav className="flex gap-0.5 overflow-x-auto sm:flex-col sm:overflow-visible">
-            {SECTIONS.map((s) => (
-              <button
-                key={s.value}
-                type="button"
-                onClick={() => setSection(s.value)}
-                className={[
-                  'rounded px-2 py-1 text-left text-xs font-medium transition-colors',
-                  section === s.value
-                    ? 'bg-zinc-950/5 text-zinc-950 dark:bg-white/10 dark:text-white'
-                    : 'text-zinc-600 hover:text-zinc-950 dark:text-zinc-400 dark:hover:text-white',
-                ].join(' ')}
-              >
-                {s.label}
-              </button>
-            ))}
-          </nav>
-        </aside>
-        <div className="overflow-y-auto px-4 py-4 sm:px-6 sm:py-5">
-          {section === 'general' && <GeneralPane />}
-          {section === 'appearance' && <AppearancePane />}
-          {section === 'account' && <AccountPane />}
+          <button
+            type="button"
+            onClick={() => onClose(false)}
+            aria-label="Close settings"
+            className="inline-flex size-8 items-center justify-center rounded-md text-zinc-500 hover:bg-zinc-950/5 hover:text-zinc-950 dark:text-zinc-400 dark:hover:bg-white/10 dark:hover:text-white"
+          >
+            <XMarkIcon className="size-4 fill-current" />
+          </button>
+        </header>
+
+        <div className="grid min-h-0 flex-1 grid-cols-1 sm:grid-cols-[13rem_1fr]">
+          <aside className="border-b border-zinc-950/10 bg-zinc-50/70 px-3 py-3 sm:border-r sm:border-b-0 dark:border-white/10 dark:bg-zinc-950/25">
+            <nav className="flex gap-1 overflow-x-auto sm:flex-col sm:overflow-visible" aria-label="Settings sections">
+              {SECTIONS.map(({ value, label, Icon }) => (
+                <button
+                  key={value}
+                  type="button"
+                  onClick={() => setSection(value)}
+                  className={[
+                    'flex h-8 items-center gap-2 rounded-lg px-2.5 text-left text-xs font-medium whitespace-nowrap transition-colors',
+                    section === value
+                      ? 'bg-white text-zinc-950 shadow-xs ring-1 ring-zinc-950/8 dark:bg-white/10 dark:text-white dark:ring-white/10'
+                      : 'text-zinc-600 hover:bg-white/70 hover:text-zinc-950 dark:text-zinc-400 dark:hover:bg-white/5 dark:hover:text-white',
+                  ].join(' ')}
+                >
+                  <Icon
+                    className={[
+                      'size-4 shrink-0 fill-current',
+                      section === value ? 'text-accent-600 dark:text-accent-300' : 'text-zinc-400 dark:text-zinc-500',
+                    ].join(' ')}
+                  />
+                  <span>{label}</span>
+                </button>
+              ))}
+            </nav>
+          </aside>
+
+          <div className="min-h-0 overflow-y-auto bg-white px-4 py-4 sm:px-5 dark:bg-zinc-900">
+            {section === 'general' && <GeneralPane />}
+            {section === 'appearance' && <AppearancePane />}
+            {section === 'account' && <AccountPane />}
+          </div>
         </div>
       </div>
     </Dialog>
   )
 }
 
-function SectionTitle({ children }: { children: React.ReactNode }) {
-  return <h2 className="text-sm font-semibold text-zinc-950 dark:text-white">{children}</h2>
+function PaneHeader({ title, description }: { title: string; description: string }) {
+  return (
+    <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 pb-4">
+      <h2 className="text-sm font-semibold tracking-tight text-zinc-950 dark:text-white">{title}</h2>
+      <p className="text-xs text-zinc-500 dark:text-zinc-400">{description}</p>
+    </div>
+  )
+}
+
+function SettingsGroup({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="overflow-hidden rounded-xl border border-zinc-950/5 bg-white dark:border-white/8 dark:bg-zinc-900">
+      <div className="divide-y divide-zinc-950/5 dark:divide-white/5">{children}</div>
+    </div>
+  )
 }
 
 function Row({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
   return (
-    <div className="flex flex-col gap-2 py-3 sm:flex-row sm:items-center sm:justify-between sm:gap-6">
+    <div className="flex flex-col gap-3 px-4 py-3.5 sm:flex-row sm:items-center sm:justify-between sm:gap-6">
       <div className="min-w-0">
         <div className="text-xs font-medium text-zinc-950 dark:text-white">{label}</div>
         {hint && <div className="mt-0.5 text-[11px] text-zinc-500 dark:text-zinc-400">{hint}</div>}
       </div>
-      <div className="min-w-0 sm:shrink-0">{children}</div>
+      <div className="min-w-0 overflow-x-auto sm:shrink-0">{children}</div>
     </div>
   )
 }
 
 function GeneralPane() {
   return (
-    <div className="flex flex-col">
-      <SectionTitle>General</SectionTitle>
-      <div className="mt-3 divide-y divide-zinc-950/5 dark:divide-white/5">
+    <div>
+      <PaneHeader title="General" description="Runtime metadata and telemetry source" />
+      <SettingsGroup>
         <Row label="Version">
           <code className="rounded bg-zinc-950/5 px-1.5 py-0.5 font-mono text-[11px] text-zinc-700 dark:bg-white/5 dark:text-zinc-300">
             {APP_VERSION}
           </code>
         </Row>
         <ProviderRow />
-      </div>
+      </SettingsGroup>
     </div>
   )
 }
@@ -103,7 +145,7 @@ function ProviderRow() {
       await Promise.all([
         qc.invalidateQueries({ queryKey: queryKeys.providers.all() }),
         qc.invalidateQueries({ queryKey: queryKeys.sessions.all() }),
-        qc.invalidateQueries({ queryKey: queryKeys.traces.all() }),
+        qc.invalidateQueries({ queryKey: queryKeys.runs.all() }),
         qc.invalidateQueries({ queryKey: queryKeys.home.all() }),
         qc.invalidateQueries({ queryKey: queryKeys.inbox.all() }),
       ])
@@ -146,9 +188,9 @@ function AppearancePane() {
     { value: 'dark', label: 'Dark' },
   ]
   return (
-    <div className="flex flex-col">
-      <SectionTitle>Appearance</SectionTitle>
-      <div className="mt-3 divide-y divide-zinc-950/5 dark:divide-white/5">
+    <div>
+      <PaneHeader title="Appearance" description="Local display preferences" />
+      <SettingsGroup>
         <Row label="Theme" hint="Persisted in localStorage.">
           <StatusPills
             value={mode}
@@ -158,24 +200,43 @@ function AppearancePane() {
             options={options}
           />
         </Row>
-      </div>
+      </SettingsGroup>
     </div>
   )
 }
 
 function AccountPane() {
-  const user = useUser()
+  const [storedId, setStoredId] = useUserId()
+  const [value, setValue] = useState(storedId)
+
+  useEffect(() => {
+    setValue(storedId)
+  }, [storedId])
+
+  const dirty = value.trim() !== storedId
+
   return (
-    <div className="flex flex-col">
-      <SectionTitle>Account</SectionTitle>
-      <div className="mt-3 divide-y divide-zinc-950/5 dark:divide-white/5">
-        <Row label="Name">
-          <span className="text-xs text-zinc-700 dark:text-zinc-300">{user.name}</span>
+    <div>
+      <PaneHeader title="Account" description="Identity used to scope the sidebar's Recent list" />
+      <SettingsGroup>
+        <Row
+          label="User ID"
+          hint="Matched against user.id / enduser.id / ag_ui.user.id on emitted spans. Stored in your browser."
+        >
+          <div className="flex items-center gap-2">
+            <Input
+              type="text"
+              value={value}
+              onChange={(event) => setValue(event.target.value)}
+              placeholder="you@example.com"
+              className="w-56"
+            />
+            <Button onClick={() => setStoredId(value)} disabled={!dirty}>
+              Save
+            </Button>
+          </div>
         </Row>
-        <Row label="Email">
-          <span className="break-all font-mono text-[11px] text-zinc-700 dark:text-zinc-300">{user.email}</span>
-        </Row>
-      </div>
+      </SettingsGroup>
     </div>
   )
 }

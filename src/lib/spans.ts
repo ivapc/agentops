@@ -1,5 +1,35 @@
 import type { JsonValue } from './json'
 
+export interface ToolCallResolution {
+  subAgent?: Span
+  result?: JsonValue
+  success: boolean
+}
+
+// Index tool-call ids in a trace to their resolution (result + sub-agent
+// linkage). Builds the parent→children map once, then resolves each tool
+// span in O(1) — avoids the per-call `spans.find` that `findWrappedAgent`
+// would do (O(n²) in pathological traces).
+export function resolveToolCalls(spans: Span[]): Map<string, ToolCallResolution> {
+  const byParent = new Map<string | null, Span[]>()
+  for (const s of spans) {
+    const arr = byParent.get(s.parentId) ?? []
+    arr.push(s)
+    byParent.set(s.parentId, arr)
+  }
+  const map = new Map<string, ToolCallResolution>()
+  for (const t of spans) {
+    if (t.operation !== 'tool' || !t.toolCallId) continue
+    const subAgent = byParent.get(t.id)?.find((c) => c.operation === 'invoke_agent')
+    map.set(t.toolCallId, {
+      subAgent,
+      result: t.toolResult,
+      success: !spanHasError(t),
+    })
+  }
+  return map
+}
+
 export type SpanKind = 'server' | 'client' | 'internal' | 'producer' | 'consumer'
 export type Operation = 'http' | 'chat' | 'tool' | 'invoke_agent'
 
@@ -18,6 +48,7 @@ export interface Span {
   outputTokens?: number
   costUsd?: number
   agentName?: string
+  agentDescription?: string
   toolName?: string
   inputParams?: string
   model?: string
@@ -26,7 +57,17 @@ export interface Span {
   llmInput?: JsonValue
   llmOutput?: JsonValue
   cachedTokens?: number
+  reasoningTokens?: number
   toolDefinitions?: JsonValue
+  finishReasons?: string[]
+  provider?: string
+  ttftMs?: number
+  responseId?: string
+  systemFingerprint?: string
+  // True when OTel span_status was ERROR. Set at the provider boundary;
+  // classify-span.ts (attribute-only) does not populate it. spanHasError()
+  // ORs this with tool-result error detection.
+  hasError?: boolean
 
   // Present on execute_tool spans — pairing key and the tool's return value.
   toolCallId?: string
@@ -40,6 +81,17 @@ export interface Span {
   // as real ones.
   sessionId?: string
   sessionSource?: 'attribute' | 'agent-instance'
+}
+
+// Treat a span as root when its declared parent is not present in the trace.
+// Some providers (OpenObserve) emit the trace id as the root's parent rather
+// than empty — see docs/reference/provider-quirks.md. Applied at the provider
+// boundary so consumers can trust `parentId === null` means root.
+export function normalizeTraceRoots(spans: Span[]): void {
+  const ids = new Set(spans.map((s) => s.id))
+  for (const s of spans) {
+    if (s.parentId && !ids.has(s.parentId)) s.parentId = null
+  }
 }
 
 // Stamp every span in a trace with the same sessionId. A real `attribute`
@@ -74,34 +126,34 @@ export const KIND_LETTER: Record<SpanKind, string> = {
 }
 
 export function spanHasError(span: Span): boolean {
+  if (span.hasError) return true
   const r = span.toolResult
   if (!r || typeof r !== 'object' || Array.isArray(r)) return false
   return r.error === true || r.status === 'error'
 }
 
-export function subtreeAggregate(spans: Span[], rootId: string): { tokens: number; costUsd: number } {
+export function descendantSpans(spans: Span[], rootId: string): Span[] {
   const byParent = new Map<string | null, Span[]>()
   for (const s of spans) {
     const arr = byParent.get(s.parentId) ?? []
     arr.push(s)
     byParent.set(s.parentId, arr)
   }
-  const walk = (id: string): { tokens: number; costUsd: number } => {
-    const self = spans.find((s) => s.id === id)
-    if (!self) return { tokens: 0, costUsd: 0 }
-    let tokens = self.tokens ?? 0
-    let costUsd = self.costUsd ?? 0
+  const out: Span[] = []
+  const walk = (id: string) => {
     for (const c of byParent.get(id) ?? []) {
-      const sub = walk(c.id)
-      tokens += sub.tokens
-      costUsd += sub.costUsd
+      out.push(c)
+      walk(c.id)
     }
-    return { tokens, costUsd }
   }
-  return walk(rootId)
+  walk(rootId)
+  return out
 }
 
-export function findOrchestratorId(spans: Span[]): string | null {
+// A session can span multiple traces — each user turn typically lands on its
+// own root invoke_agent. Return the shallowest invoke_agent per trace so
+// downstream callers can aggregate turns across the whole session.
+export function findOrchestratorIds(spans: Span[]): string[] {
   const byId = new Map(spans.map((s) => [s.id, s]))
   const memo = new Map<string, number>()
   const depth = (id: string): number => {
@@ -112,9 +164,19 @@ export function findOrchestratorId(spans: Span[]): string | null {
     memo.set(id, d)
     return d
   }
-  const agents = spans.filter((s) => s.operation === 'invoke_agent')
-  agents.sort((a, b) => depth(a.id) - depth(b.id))
-  return agents[0]?.id ?? null
+  const perTrace = new Map<string, Span>()
+  for (const s of spans) {
+    if (s.operation !== 'invoke_agent') continue
+    const cur = perTrace.get(s.traceId)
+    if (!cur || depth(s.id) < depth(cur.id) || (depth(s.id) === depth(cur.id) && s.startMs < cur.startMs)) {
+      perTrace.set(s.traceId, s)
+    }
+  }
+  return [...perTrace.values()].sort((a, b) => a.startMs - b.startMs).map((s) => s.id)
+}
+
+export function findOrchestratorId(spans: Span[]): string | null {
+  return findOrchestratorIds(spans)[0] ?? null
 }
 
 // If a `tool` span wraps a sub-agent invocation (i.e. has an invoke_agent

@@ -1,18 +1,22 @@
 import {
   classifySpan,
-  extractAgentInstanceId,
   extractAgentName,
   SESSION_ID_KEYS,
   SESSION_TITLE_KEYS,
+  USER_ID_ATTR_KEYS,
+  USER_NAME_ATTR_KEYS,
 } from '#/lib/classify-span'
-import { propagateSessionInTrace, type Span, type SpanKind } from '#/lib/spans'
+import { normalizeTraceRoots, propagateSessionInTrace, type Span, type SpanKind } from '#/lib/spans'
+import { aggregateSessions, mapLatencyRow, pickIdentityValue } from './shared'
 import type {
   GetTraceOpts,
   InventoryDiscoveryKind,
   InventoryObservation,
+  LatencyKind,
+  LatencyOpts,
+  LatencyRow,
   ListTracesOpts,
   SessionFetch,
-  SessionSummary,
   TelemetryProvider,
   TraceSummary,
 } from './types'
@@ -46,6 +50,11 @@ const SESSION_ID_MAX_AS =
 const SESSION_ID_FALLBACK_KEY = SESSION_ID_KEYS[0]
 const SESSION_TITLE_SELECT = SESSION_TITLE_KEYS.join(', ')
 const SESSION_TITLE_FALLBACK_KEY = SESSION_TITLE_KEYS[0]
+
+const LLM_INPUT_FALLBACK_KEY = 'llm_input'
+const USER_ID_KEYS = USER_ID_ATTR_KEYS.map(sqlColumnKey)
+const USER_NAME_KEYS = USER_NAME_ATTR_KEYS.map(sqlColumnKey)
+const HOST_KEYS = ['host_name']
 
 export function createOpenObserveProvider(cfg: OpenObserveConfig): TelemetryProvider {
   const search = async (sql: string, fromUs: number, toUs: number, size = DEFAULT_SIZE) => {
@@ -83,6 +92,7 @@ export function createOpenObserveProvider(cfg: OpenObserveConfig): TelemetryProv
       const hits = (data.hits ?? []) as Array<Record<string, unknown>>
       if (hits.length === 0) return { kind: 'not_found' }
       const spans = hits.map(normalizeOpenObserveHit)
+      normalizeTraceRoots(spans)
       propagateSessionInTrace(spans)
       const truncated = hits.length >= DEFAULT_SIZE
       return { kind: 'found', spans, truncated }
@@ -93,14 +103,21 @@ export function createOpenObserveProvider(cfg: OpenObserveConfig): TelemetryProv
       const limit = opts?.limit ?? DEFAULT_LIST_LIMIT
       // Pull every row needed to (a) resolve a trace's session id and (b)
       // roll up its tokens/cost. Group by trace in TS, then by session.
-      const buildSql = (withThread: boolean, withTitle: boolean) => `
+      const buildSql = (skip: ReadonlySet<string>) => {
+        const has = (k: string) => !skip.has(k)
+        const userPredicate = identityPredicate(opts, skip)
+        return `
         SELECT
           trace_id,
           span_id,
           reference_parent_span_id,
           operation_name,
-          ${withThread ? `${SESSION_ID_SELECT},` : ''}
-          ${withTitle ? `${SESSION_TITLE_SELECT},` : ''}
+          ${has(SESSION_ID_FALLBACK_KEY) ? `${SESSION_ID_SELECT},` : ''}
+          ${has(SESSION_TITLE_FALLBACK_KEY) ? `${SESSION_TITLE_SELECT},` : ''}
+          ${has(LLM_INPUT_FALLBACK_KEY) ? `${LLM_INPUT_FALLBACK_KEY},` : ''}
+          ${coalesceAs(USER_NAME_KEYS, 'user_name', skip)}
+          ${coalesceAs(USER_ID_KEYS, 'user_id', skip)}
+          ${coalesceAs(HOST_KEYS, 'host_name', skip)}
           start_time,
           end_time,
           gen_ai_operation_name,
@@ -109,21 +126,26 @@ export function createOpenObserveProvider(cfg: OpenObserveConfig): TelemetryProv
           span_status,
           service_name
         FROM "${cfg.stream}"
-        WHERE operation_name LIKE 'invoke_agent %'
-           OR gen_ai_operation_name = 'chat'
-           ${withThread ? `OR ${SESSION_ID_NOT_NULL}` : ''}
+        WHERE (
+          operation_name LIKE 'invoke_agent %'
+          OR gen_ai_operation_name = 'chat'
+          ${has(SESSION_ID_FALLBACK_KEY) ? `OR ${SESSION_ID_NOT_NULL}` : ''}
+        )
+        ${userPredicate ? `AND (${userPredicate})` : opts?.userId || opts?.userName ? 'AND 1 = 0' : ''}
         ORDER BY start_time DESC
         LIMIT ${SESSION_SCAN_LIMIT}
       `
-      const data = await tryWithFallback(
-        () => search(buildSql(true, true), fromUs, toUs, SESSION_SCAN_LIMIT),
-        () =>
-          tryWithFallback(
-            () => search(buildSql(true, false), fromUs, toUs, SESSION_SCAN_LIMIT),
-            () => search(buildSql(false, false), fromUs, toUs, SESSION_SCAN_LIMIT),
-            SESSION_ID_FALLBACK_KEY,
-          ),
-        [SESSION_TITLE_FALLBACK_KEY, SESSION_ID_FALLBACK_KEY],
+      }
+      const data = await searchDroppingMissing(
+        (skip) => search(buildSql(skip), fromUs, toUs, SESSION_SCAN_LIMIT),
+        [
+          LLM_INPUT_FALLBACK_KEY,
+          SESSION_TITLE_FALLBACK_KEY,
+          SESSION_ID_FALLBACK_KEY,
+          ...USER_NAME_KEYS,
+          ...USER_ID_KEYS,
+          ...HOST_KEYS,
+        ],
       )
       const hits = (data.hits ?? []) as Array<Record<string, unknown>>
       const truncated = hits.length >= SESSION_SCAN_LIMIT
@@ -135,21 +157,27 @@ export function createOpenObserveProvider(cfg: OpenObserveConfig): TelemetryProv
       if (!/^[A-Za-z0-9_-]+$/.test(sessionId)) return { kind: 'not_found' }
       const isHex = /^[a-f0-9]+$/i.test(sessionId)
       const { fromUs, toUs } = window(opts)
-      const buildTraceSql = (withThread: boolean) => {
-        const clauses: string[] = []
-        if (withThread) clauses.push(...SESSION_ID_KEYS.map((k) => `${k} = '${sessionId}'`))
+      const buildTraceSql = (skip: ReadonlySet<string>) => {
+        // Heuristic (agent-instance) sessions use the trace_id as the session id —
+        // always try matching it directly so the drawer can resolve them.
+        const clauses: string[] = [`trace_id = '${sessionId}'`]
+        for (const k of SESSION_ID_KEYS) {
+          if (!skip.has(k)) clauses.push(`${k} = '${sessionId}'`)
+        }
         if (isHex) clauses.push(`operation_name LIKE 'invoke_agent %(${sessionId})%'`)
+        const userPredicate = identityPredicate(opts, skip)
         return clauses.length === 0
           ? null
-          : `SELECT DISTINCT trace_id FROM "${cfg.stream}" WHERE ${clauses.join(' OR ')}`
+          : `SELECT DISTINCT trace_id FROM "${cfg.stream}" WHERE (${clauses.join(' OR ')}) ${
+              userPredicate ? `AND (${userPredicate})` : opts?.userId || opts?.userName ? 'AND 1 = 0' : ''
+            }`
       }
-      const primarySql = buildTraceSql(true)
-      if (!primarySql) return { kind: 'not_found' }
-      const fallbackSql = buildTraceSql(false)
-      const trData = await tryWithFallback(
-        () => search(primarySql, fromUs, toUs),
-        () => (fallbackSql ? search(fallbackSql, fromUs, toUs) : Promise.resolve({ hits: [] })),
-        SESSION_ID_FALLBACK_KEY,
+      const trData = await searchDroppingMissing(
+        (skip) => {
+          const sql = buildTraceSql(skip)
+          return sql ? search(sql, fromUs, toUs) : Promise.resolve({ hits: [] })
+        },
+        [SESSION_ID_FALLBACK_KEY, ...USER_NAME_KEYS, ...USER_ID_KEYS],
       )
       const trHits = (trData.hits ?? []) as Array<Record<string, unknown>>
       const traceIds = trHits.map((h) => String(h.trace_id)).filter(Boolean)
@@ -168,7 +196,10 @@ export function createOpenObserveProvider(cfg: OpenObserveConfig): TelemetryProv
         arr.push(s)
         byTrace.set(s.traceId, arr)
       }
-      for (const trSpans of byTrace.values()) propagateSessionInTrace(trSpans)
+      for (const trSpans of byTrace.values()) {
+        normalizeTraceRoots(trSpans)
+        propagateSessionInTrace(trSpans)
+      }
       const source: 'attribute' | 'agent-instance' = spans.some((s) => s.sessionSource === 'attribute')
         ? 'attribute'
         : 'agent-instance'
@@ -226,6 +257,39 @@ export function createOpenObserveProvider(cfg: OpenObserveConfig): TelemetryProv
       const hits = (data.hits ?? []) as Array<Record<string, unknown>>
       return hits.flatMap((hit) => hitToInventoryObservation(kind, hit))
     },
+
+    async listLatencyPercentiles(kind: LatencyKind, opts?: LatencyOpts): Promise<LatencyRow[]> {
+      const { fromUs, toUs } = window(opts)
+      const limit = opts?.limit ?? 5
+      const whereClause = kind === 'generation' ? `WHERE gen_ai_operation_name = 'chat'` : ''
+      // Duration is µs in OO; divide at query time so both providers return ms.
+      const sql = `
+        SELECT
+          operation_name AS name,
+          approx_percentile_cont(duration, 0.5) / 1000 AS p50_ms,
+          approx_percentile_cont(duration, 0.9) / 1000 AS p90_ms,
+          approx_percentile_cont(duration, 0.95) / 1000 AS p95_ms,
+          approx_percentile_cont(duration, 0.99) / 1000 AS p99_ms,
+          COUNT(*) AS count
+        FROM "${cfg.stream}"
+        ${whereClause}
+        GROUP BY operation_name
+        ORDER BY p95_ms DESC
+        LIMIT ${limit}
+      `
+      try {
+        const data = await search(sql, fromUs, toUs, limit)
+        const hits = (data.hits ?? []) as Array<Record<string, unknown>>
+        return hits.map(mapLatencyRow)
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e)
+        // No spans tagged with gen_ai_operation_name in this stream — return empty.
+        if (kind === 'generation' && msg.includes('"code":20004') && msg.includes('gen_ai_operation_name')) {
+          return []
+        }
+        throw e
+      }
+    },
   }
 }
 
@@ -246,10 +310,65 @@ async function tryWithFallback<T>(
   }
 }
 
+// Retry a query, dropping each missing optional field one at a time. Unlike
+// tryWithFallback's collapse-everything cascade, this preserves fields that
+// the schema *does* have — so if `ag_ui_thread_title` is missing but
+// `llm_input` exists, the second attempt keeps `llm_input`.
+async function searchDroppingMissing<T>(
+  run: (skip: ReadonlySet<string>) => Promise<T>,
+  optionalFields: readonly string[],
+  maxAttempts = optionalFields.length + 1,
+): Promise<T> {
+  const skip = new Set<string>()
+  for (let i = 0; i < maxAttempts; i++) {
+    try {
+      return await run(skip)
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e)
+      if (!msg.includes('"code":20004')) throw e
+      const newlyMissing = optionalFields.filter((f) => !skip.has(f) && msg.includes(`No field named ${f}`))
+      if (newlyMissing.length === 0) throw e
+      for (const f of newlyMissing) skip.add(f)
+    }
+  }
+  // Final attempt with all optional fields dropped.
+  return await run(new Set(optionalFields))
+}
+
 function window(opts: GetTraceOpts | ListTracesOpts | undefined): { fromUs: number; toUs: number } {
   const toUs = opts?.toUs ?? Date.now() * 1000
   const fromUs = opts?.fromUs ?? toUs - DEFAULT_WINDOW_US
   return { fromUs, toUs }
+}
+
+function sqlColumnKey(attrKey: string): string {
+  return attrKey.replaceAll('.', '_')
+}
+
+function coalesceAs(keys: readonly string[], alias: string, skip: ReadonlySet<string>): string {
+  const available = unique(keys).filter((k) => !skip.has(k))
+  if (available.length === 0) return `'' AS ${alias},`
+  if (available.length === 1) return `${available[0]} AS ${alias},`
+  return `COALESCE(${available.join(', ')}) AS ${alias},`
+}
+
+function identityPredicate(
+  opts: { userId?: string; userName?: string } | undefined,
+  skip: ReadonlySet<string>,
+): string | undefined {
+  const id = pickIdentityValue(opts)
+  if (!id) return undefined
+  const cols = id.kind === 'id' ? USER_ID_KEYS : USER_NAME_KEYS
+  const keys = unique(cols).filter((k) => !skip.has(k))
+  return keys.map((k) => `${k} = ${sqlString(id.value)}`).join(' OR ') || undefined
+}
+
+function sqlString(value: string): string {
+  return `'${value.replaceAll("'", "''")}'`
+}
+
+function unique(values: readonly string[]): string[] {
+  return [...new Set(values)]
 }
 
 function hitToSummary(h: Record<string, unknown>): TraceSummary {
@@ -315,185 +434,9 @@ function normalizeOpenObserveHit(h: Record<string, unknown>): Span {
     // We normalize to ms throughout the app.
     startMs: Math.floor(Number(h.start_time ?? 0) / 1_000_000),
     endMs: Math.floor(Number(h.end_time ?? 0) / 1_000_000),
+    ...(h.span_status === 'ERROR' ? { hasError: true } : {}),
     ...classifySpan(operationName, h),
   }
-}
-
-// Roll rows up into SessionSummary[]. Two-stage: per-trace first (resolve
-// session id, sum tokens/cost), then per-session.
-//
-// Per-trace session id priority:
-//   1. Real `ag_ui_thread_id` attribute on any span → source = 'attribute'
-//   2. Hex of the OUTERMOST `invoke_agent` span (the one whose parent isn't
-//      another invoke_agent) → source = 'agent-instance'
-// Sub-agents (Explorer nested inside ProverbsAgent) carry their own hex but
-// must NOT constitute a session — picking the outermost agent ensures
-// the trace gets bucketed under the orchestrator's session.
-export function aggregateSessions(hits: Array<Record<string, unknown>>, limit: number): SessionSummary[] {
-  // Group rows by trace_id.
-  const rowsByTrace = new Map<string, Array<Record<string, unknown>>>()
-  for (const h of hits) {
-    const traceId = String(h.trace_id ?? '')
-    if (!traceId) continue
-    const arr = rowsByTrace.get(traceId) ?? []
-    arr.push(h)
-    rowsByTrace.set(traceId, arr)
-  }
-
-  const tracesBySession = new Map<string, TraceSession[]>()
-  for (const [traceId, rows] of rowsByTrace) {
-    const ts = resolveTraceSession(traceId, rows)
-    if (!ts) continue
-    const arr = tracesBySession.get(ts.sessionId) ?? []
-    arr.push(ts)
-    tracesBySession.set(ts.sessionId, arr)
-  }
-
-  const out: SessionSummary[] = []
-  for (const [sessionId, traces] of tracesBySession) {
-    // Attribute-source wins if any trace in the session has it.
-    const source: 'attribute' | 'agent-instance' = traces.some((t) => t.source === 'attribute')
-      ? 'attribute'
-      : 'agent-instance'
-    const s: SessionSummary = {
-      sessionId,
-      title: traces
-        .slice()
-        .sort((a, b) => b.endMs - a.endMs)
-        .find((t) => t.title)?.title,
-      userName: pickLatest(traces, (t) => t.userName),
-      userId: pickLatest(traces, (t) => t.userId),
-      host: pickLatest(traces, (t) => t.host),
-      source,
-      startedAtMs: Math.min(...traces.map((t) => t.startMs)),
-      lastSeenMs: Math.max(...traces.map((t) => t.endMs)),
-      traceCount: traces.length,
-      agents: [...new Set(traces.flatMap((t) => [...t.agents]))],
-    }
-    const totalTokens = traces.reduce((acc, t) => acc + t.tokens, 0)
-    if (totalTokens > 0) s.totalTokens = totalTokens
-    const totalCost = traces.reduce((acc, t) => acc + t.cost, 0)
-    if (totalCost > 0) s.totalCostUsd = totalCost
-    if (traces.some((t) => t.hasError)) s.hasError = true
-    out.push(s)
-  }
-
-  out.sort((a, b) => b.lastSeenMs - a.lastSeenMs)
-  return out.slice(0, limit)
-}
-
-type TraceSession = {
-  traceId: string
-  sessionId: string
-  source: 'attribute' | 'agent-instance'
-  startMs: number
-  endMs: number
-  agents: Set<string>
-  title?: string
-  userName?: string
-  userId?: string
-  host?: string
-  tokens: number
-  cost: number
-  hasError: boolean
-}
-
-function resolveTraceSession(traceId: string, rows: Array<Record<string, unknown>>): TraceSession | undefined {
-  const key = findSessionKey(rows)
-  if (!key) return undefined
-  return { traceId, sessionId: key.id, source: key.source, ...rollupTrace(rows) }
-}
-
-export function findSessionKey(
-  rows: Array<Record<string, unknown>>,
-): { id: string; source: 'attribute' | 'agent-instance' } | undefined {
-  for (const h of rows) {
-    for (const k of SESSION_ID_KEYS) {
-      const v = h[k]
-      if (typeof v === 'string' && v) return { id: v, source: 'attribute' }
-    }
-  }
-  // Heuristic: hex of the earliest-starting invoke_agent. Parent starts
-  // before child, so the root agent is always first by start_time.
-  let root: Record<string, unknown> | undefined
-  for (const h of rows) {
-    const op = h.operation_name
-    if (typeof op !== 'string' || !op.startsWith('invoke_agent ')) continue
-    if (!root || Number(h.start_time ?? 0) < Number(root.start_time ?? 0)) root = h
-  }
-  if (!root) return undefined
-  const hex = extractAgentInstanceId(String(root.operation_name))
-  return hex ? { id: hex, source: 'agent-instance' } : undefined
-}
-
-function rollupTrace(rows: Array<Record<string, unknown>>): Omit<TraceSession, 'traceId' | 'sessionId' | 'source'> {
-  let startMs = Number.POSITIVE_INFINITY
-  let endMs = 0
-  const agents = new Set<string>()
-  let title: string | undefined
-  let userName: string | undefined
-  let userId: string | undefined
-  let host: string | undefined
-  let tokens = 0
-  let cost = 0
-  let hasError = false
-  for (const h of rows) {
-    const s = Math.floor(Number(h.start_time ?? 0) / 1_000_000)
-    const e = Math.floor(Number(h.end_time ?? 0) / 1_000_000)
-    if (s && s < startMs) startMs = s
-    if (e > endMs) endMs = e
-    if (typeof h.operation_name === 'string') {
-      const agent = extractAgentName(h.operation_name)
-      if (agent) agents.add(agent)
-    }
-    if (!title) title = pickTitle(h)
-    if (!userName) userName = pickString(h, ['user_name'])
-    if (!userId) userId = pickString(h, ['user_id'])
-    if (!host) host = pickString(h, ['host_name', 'service_name'])
-    if (h.gen_ai_operation_name === 'chat') {
-      const t = num(h.llm_usage_tokens_total)
-      if (t) tokens += t
-      const c = num(h.llm_usage_cost_total)
-      if (c) cost += c
-    }
-    if (h.span_status === 'ERROR') hasError = true
-  }
-  return {
-    startMs: startMs === Number.POSITIVE_INFINITY ? 0 : startMs,
-    endMs,
-    agents,
-    title,
-    userName,
-    userId,
-    host,
-    tokens,
-    cost,
-    hasError,
-  }
-}
-
-function pickLatest(traces: TraceSession[], pick: (trace: TraceSession) => string | undefined): string | undefined {
-  return traces
-    .slice()
-    .sort((a, b) => b.endMs - a.endMs)
-    .map(pick)
-    .find((v): v is string => typeof v === 'string' && v.length > 0)
-}
-
-function pickTitle(row: Record<string, unknown>): string | undefined {
-  for (const key of SESSION_TITLE_KEYS) {
-    const v = row[key]
-    if (typeof v === 'string' && v.trim()) return v.trim()
-  }
-  return undefined
-}
-
-function pickString(row: Record<string, unknown>, keys: string[]): string | undefined {
-  for (const key of keys) {
-    const v = row[key]
-    if (typeof v === 'string' && v.trim()) return v.trim()
-  }
-  return undefined
 }
 
 function kindFromNumber(raw: unknown): SpanKind {

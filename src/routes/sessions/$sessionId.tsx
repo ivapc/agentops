@@ -1,4 +1,5 @@
 import { ChevronLeftIcon } from '@heroicons/react/16/solid'
+import { ChatBubbleLeftRightIcon } from '@heroicons/react/24/outline'
 import { useQuery } from '@tanstack/react-query'
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { useEffect, useState } from 'react'
@@ -8,13 +9,15 @@ import {
   AutoRefreshSelect,
   DEFAULT_AUTO_REFRESH_INTERVAL,
 } from '#/components/auto-refresh-select'
-import { ContextWindow } from '#/components/context-window'
 import { ConversationView } from '#/components/conversation-view'
+import { EmptyState } from '#/components/empty-state'
+import { IconTabs } from '#/components/icon-tabs'
 import { TimeRangeSelect } from '#/components/time-range-select'
-import { TraceInspectLayout } from '#/components/trace-drawer'
 import { Link } from '#/components/ui/link'
-import type { Span } from '#/lib/spans'
 import { DEFAULT_TIME_RANGE_DAYS, parseTimeRangeDays, type TimeRangeDays } from '#/lib/time-range'
+import { SessionContextView } from './-components/session-inspect/context'
+import { SESSION_VIEW_TABS, type SessionInspectView } from './-components/session-inspect/drawer'
+import { SessionInspectLayout } from './-components/session-inspect/overview'
 import { sessionQuery } from './-data'
 
 export const Route = createFileRoute('/sessions/$sessionId')({
@@ -30,12 +33,14 @@ export const Route = createFileRoute('/sessions/$sessionId')({
 
 interface SessionSearch {
   days: TimeRangeDays
-  view: 'trace' | 'conversation'
+  view: SessionInspectView
   span?: string
 }
 
-function parseSessionView(value: unknown): 'trace' | 'conversation' | undefined {
-  if (value === 'trace' || value === 'conversation') return value
+function parseSessionView(value: unknown): SessionInspectView | undefined {
+  if (value === 'conversation') return 'conversation'
+  if (value === 'context') return 'context'
+  if (value === 'spans' || value === 'trace') return 'spans'
   return undefined
 }
 
@@ -55,11 +60,11 @@ function SessionDetail() {
     refetchInterval: AUTO_REFRESH_MS[autoRefresh],
   })
   const [selectedId, setSelectedId] = useState<string | null>(() =>
-    search.view === 'trace' && search.span ? search.span : null,
+    search.view === 'spans' && search.span ? search.span : null,
   )
 
   useEffect(() => {
-    setSelectedId(search.view === 'trace' && search.span ? search.span : null)
+    setSelectedId(search.view === 'spans' && search.span ? search.span : null)
   }, [search.view, search.span])
 
   const setDays = (days: TimeRangeDays) => {
@@ -68,28 +73,23 @@ function SessionDetail() {
     })
   }
 
-  if (!data) {
-    return (
-      <div className="flex h-full min-h-[60vh] flex-col">
-        <Header source={null} provider={undefined} fingerprint={undefined} days={search.days} onDaysChange={setDays} />
-        <div className="flex flex-1 items-center justify-center text-xs text-zinc-400 dark:text-zinc-600">
-          Session not found. Check that traces with this session.id exist in the active provider.
-        </div>
-      </div>
-    )
-  }
-
-  const { spans, source, provider, fingerprint } = data
+  const spans = data?.spans ?? []
+  const source = data?.source ?? null
+  const provider = data?.provider
+  const fingerprint = data?.fingerprint
   const inspectView = search.view
-  const setInspectView = (view: 'trace' | 'conversation') => {
+  const setInspectView = (view: SessionInspectView) => {
     navigate({
       search: (prev) => {
         if (view === 'conversation') {
           return { days: prev.days, view: 'conversation' }
         }
+        if (view === 'context') {
+          return { days: prev.days, view: 'context' }
+        }
         return {
           days: prev.days,
-          view: 'trace',
+          view: 'spans',
           ...(typeof prev.span === 'string' && prev.span.length > 0 ? { span: prev.span } : {}),
         }
       },
@@ -102,10 +102,8 @@ function SessionDetail() {
         source={source}
         provider={provider}
         fingerprint={fingerprint}
-        spans={spans}
         days={search.days}
         onDaysChange={setDays}
-        showTimeRange={false}
         autoRefresh={autoRefresh}
         onAutoRefreshChange={setAutoRefresh}
         onRefresh={() => {
@@ -117,10 +115,18 @@ function SessionDetail() {
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden border-t border-zinc-950/10 dark:border-white/10">
         <SessionInspectTabs active={inspectView} onSelect={setInspectView} />
         <div className="min-h-0 flex-1 overflow-hidden bg-white dark:bg-zinc-900">
-          {inspectView === 'trace' ? (
-            <TraceInspectLayout spans={spans} loading={false} selectedId={selectedId} onSelect={setSelectedId} />
-          ) : (
+          {!data ? (
+            <EmptyState
+              icon={ChatBubbleLeftRightIcon}
+              title="Session not found"
+              description="No spans for this session id in the active provider. Widen the time range, or check that this id was emitted."
+            />
+          ) : inspectView === 'spans' ? (
+            <SessionInspectLayout spans={spans} loading={false} selectedId={selectedId} onSelect={setSelectedId} />
+          ) : inspectView === 'conversation' ? (
             <ConversationView spans={spans} onSelect={setSelectedId} />
+          ) : (
+            <SessionContextView spans={spans} />
           )}
         </div>
       </div>
@@ -132,38 +138,15 @@ function SessionInspectTabs({
   active,
   onSelect,
 }: {
-  active: 'trace' | 'conversation'
-  onSelect: (view: 'trace' | 'conversation') => void
+  active: SessionInspectView
+  onSelect: (view: SessionInspectView) => void
 }) {
   return (
     <nav
-      className="flex shrink-0 flex-wrap gap-5 border-zinc-950/10 border-b bg-white px-3 pt-3 pb-0 dark:border-white/10 dark:bg-zinc-900"
+      className="flex shrink-0 flex-wrap border-zinc-950/10 border-b bg-white px-4 py-2 dark:border-white/10 dark:bg-zinc-900"
       aria-label="Session view"
     >
-      <button
-        type="button"
-        onClick={() => onSelect('trace')}
-        className={[
-          '-mb-px border-b-2 pb-1.5 text-xs font-medium transition-colors',
-          active === 'trace'
-            ? 'border-accent-500 text-zinc-950 dark:border-accent-400 dark:text-white'
-            : 'border-transparent text-zinc-500 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200',
-        ].join(' ')}
-      >
-        Trace
-      </button>
-      <button
-        type="button"
-        onClick={() => onSelect('conversation')}
-        className={[
-          '-mb-px border-b-2 pb-1.5 text-xs font-medium transition-colors',
-          active === 'conversation'
-            ? 'border-accent-500 text-zinc-950 dark:border-accent-400 dark:text-white'
-            : 'border-transparent text-zinc-500 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200',
-        ].join(' ')}
-      >
-        Conversation
-      </button>
+      <IconTabs tabs={SESSION_VIEW_TABS} value={active} onChange={onSelect} aria-label="Session view" />
     </nav>
   )
 }
@@ -172,14 +155,11 @@ interface HeaderProps {
   source: 'attribute' | 'agent-instance' | null
   provider?: string
   fingerprint?: string
-  spans?: Span[]
-  days?: TimeRangeDays
-  onDaysChange?: (days: TimeRangeDays) => void
-  /** Hide time window control (e.g. trace / conversation full-width inspect mode). */
-  showTimeRange?: boolean
-  autoRefresh?: AutoRefreshInterval
-  onAutoRefreshChange?: (value: AutoRefreshInterval) => void
-  onRefresh?: () => void
+  days: TimeRangeDays
+  onDaysChange: (days: TimeRangeDays) => void
+  autoRefresh: AutoRefreshInterval
+  onAutoRefreshChange: (value: AutoRefreshInterval) => void
+  onRefresh: () => void
   refreshing?: boolean
 }
 
@@ -187,17 +167,15 @@ function Header({
   source,
   provider,
   fingerprint,
-  spans,
   days,
   onDaysChange,
-  showTimeRange = true,
   autoRefresh,
   onAutoRefreshChange,
   onRefresh,
   refreshing,
 }: HeaderProps) {
   return (
-    <header className="flex flex-wrap items-center gap-x-3 gap-y-2 pb-3">
+    <header className="flex flex-wrap items-center gap-x-3 gap-y-2 px-4 py-4">
       <Link
         href="/sessions"
         search={days && days !== DEFAULT_TIME_RANGE_DAYS ? { days } : undefined}
@@ -207,7 +185,6 @@ function Header({
         <ChevronLeftIcon className="size-4 fill-current" />
       </Link>
       <h1 className="text-lg font-semibold tracking-tight text-zinc-950 dark:text-white">Session</h1>
-      {spans && spans.length > 0 && <ContextWindow spans={spans} />}
       {source === 'agent-instance' && (
         <span
           title="Derived from the agent-instance hex in span names; no session.id attribute present."
@@ -222,15 +199,13 @@ function Header({
         </span>
       )}
       <div className="flex w-full min-w-0 flex-wrap items-center gap-2 sm:ml-auto sm:w-auto sm:flex-nowrap">
-        {days && onDaysChange && showTimeRange ? <TimeRangeSelect value={days} onChange={onDaysChange} /> : null}
-        {autoRefresh && onAutoRefreshChange && onRefresh ? (
-          <AutoRefreshSelect
-            value={autoRefresh}
-            onChange={onAutoRefreshChange}
-            onRefresh={onRefresh}
-            loading={refreshing}
-          />
-        ) : null}
+        <TimeRangeSelect value={days} onChange={onDaysChange} />
+        <AutoRefreshSelect
+          value={autoRefresh}
+          onChange={onAutoRefreshChange}
+          onRefresh={onRefresh}
+          loading={refreshing}
+        />
       </div>
     </header>
   )

@@ -18,16 +18,25 @@ Optimize for tokens: use this map before broad searches.
 
 - App shell/nav lives in `src/components/application-layout.tsx`.
 - `/` Home shows "what's new/weird": new MCP tools, new agents, and anomaly entry points.
-- `/sessions` lists agent sessions with time range, search, status filters, cost/tokens, and opens `TraceDrawer`.
-- `/sessions/$sessionId` is the session detail page for a single session.
-- `/live` is the live traces landing page; `/live/$runId` shows a trace conversation with `ConversationView` and `ContextWindow`.
+- `/sessions` lists agent sessions with time range, search, status filters, cost/tokens, and opens `SessionInspectDrawer`.
+- `/sessions/$sessionId` is the session detail page (Spans + Conversation). Legacy `?view=trace` in the URL is treated as spans.
+- `/runs` is the runs landing page (future live ingest); `/runs/$runId` loads a single OTLP trace by `trace_id` with `ConversationView` and `ContextWindow`.
+- `/live` redirects to `/runs`; `/live/$runId` redirects to `/runs/$runId` for old bookmarks.
 - `/mcp` lists MCP servers, owners, tool counts, findings, and fetch status.
 - `/evals` is currently an empty-state placeholder.
-- `/inbox` lists alerts with snooze/dismiss actions and links back to sessions/traces.
+- `/inbox` lists alerts with snooze/dismiss actions and links back to sessions and runs.
 - `/palette` is the visual/component preview route; it may have active design edits.
 
-Key trace UI:
+Key session/run UI:
 
-- `src/components/trace-drawer.tsx` is the right-side trace drawer used from the sessions list.
-- The drawer hides plain `http` transport spans, reparents children upward, and aggregates subtree tokens/cost.
-- Trace span/domain helpers live in `src/lib/spans.ts`; shared formatting lives in `src/lib/format.ts`.
+- `src/routes/sessions/-components/session-inspect/drawer.tsx` — right drawer from `/sessions`; Spans / Conversation / Context tabs.
+- `src/routes/sessions/$sessionId.tsx` is the full-page version of the same thing (adds URL state, time range, provider/fingerprint badge).
+- Drawer and session page share view components — `./session-inspect/overview.tsx` (Spans), `src/components/conversation-view.tsx`, `./session-inspect/context.tsx`. Edit those, not the shells.
+- The span tree (`./session-inspect/tree.tsx`) hides plain `http` transport spans, reparents children upward, aggregates subtree tokens/cost.
+- Span/domain helpers: `src/lib/spans.ts`. Shared formatting: `src/lib/format.ts`.
+
+Ingest & attribute parsing:
+
+- `src/lib/classify-span.ts` — turns an OTel attribute bag + span name into a typed `Classification` (operation, model, tokens, tool fields, session id, …). Touch this when adding semconv support.
+- `src/lib/telemetry/` — provider clients (OpenObserve, App Insights) that fetch live spans. No local mirror DB.
+- Span attribute reference: `docs/reference/ai-attributes.md` — canonical lookup for `gen_ai.*`, Logfire `llm_*`, AG-UI `ag_ui_*`, OpenAI extensions, and the agent-as-tool pattern.

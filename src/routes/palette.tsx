@@ -1,6 +1,14 @@
+import {
+  ChatBubbleLeftRightIcon,
+  ClipboardDocumentListIcon,
+  CommandLineIcon,
+  InformationCircleIcon,
+  QueueListIcon,
+} from '@heroicons/react/24/outline'
 import { createFileRoute } from '@tanstack/react-router'
 import { useState } from 'react'
 import { type AutoRefreshInterval, AutoRefreshSelect } from '#/components/auto-refresh-select'
+import { IconTabs } from '#/components/icon-tabs'
 import { SearchInput } from '#/components/search-input'
 import { StatusPills } from '#/components/status-pills'
 import { TimeRangeSelect } from '#/components/time-range-select'
@@ -18,6 +26,12 @@ const ROLES = [
     note: 'Primary accent from the command text.',
   },
   { name: 'zinc', hex: '#71717a', role: 'Surface', note: 'Text, borders, backgrounds — 90%+ of pixels.' },
+  {
+    name: 'focus',
+    hex: '#09090b',
+    role: 'Focus',
+    note: 'Neutral ring on keyboard focus. Flips to zinc-400 in dark.',
+  },
   { name: 'emerald', hex: '#10b981', role: 'Success', note: 'ok dot, healthy pill.' },
   { name: 'rose', hex: '#f43f5e', role: 'Error', note: 'error dot/pill/border.' },
   { name: 'warm amber', hex: '#f0c870', role: 'Warning', note: 'Attention dot from the sidebar.' },
@@ -31,10 +45,23 @@ const STATUS_OPTIONS = [
 ] as const
 type StatusFilter = (typeof STATUS_OPTIONS)[number]['value']
 
+const SESSION_VIEW_TABS = [
+  { id: 'spans', label: 'Spans', Icon: QueueListIcon },
+  { id: 'conversation', label: 'Conversation', Icon: ChatBubbleLeftRightIcon },
+  { id: 'context', label: 'Context', Icon: ClipboardDocumentListIcon },
+] as const
+
+const INSPECTOR_TABS = [
+  { id: 'details', label: 'Details', Icon: InformationCircleIcon },
+  { id: 'logs', label: 'Logs', Icon: CommandLineIcon },
+] as const
+
 function PalettePreview() {
   const [query, setQuery] = useState('')
   const [days, setDays] = useState<TimeRangeDays>(1)
   const [status, setStatus] = useState<StatusFilter>('all')
+  const [sessionView, setSessionView] = useState<(typeof SESSION_VIEW_TABS)[number]['id']>('spans')
+  const [inspectorView, setInspectorView] = useState<(typeof INSPECTOR_TABS)[number]['id']>('details')
   const [refreshInterval, setRefreshInterval] = useState<AutoRefreshInterval>('off')
   const [refreshLoading, setRefreshLoading] = useState(false)
 
@@ -85,13 +112,31 @@ function PalettePreview() {
           >
             <StatusPills value={status} onChange={setStatus} options={[...STATUS_OPTIONS]} />
           </ControlSpecimen>
+
+          <ControlSpecimen title="Session mode nav" note="Icon + label controls for drawer-level views.">
+            <IconTabs
+              tabs={SESSION_VIEW_TABS}
+              value={sessionView}
+              onChange={setSessionView}
+              aria-label="Session navigation preview"
+            />
+          </ControlSpecimen>
+
+          <ControlSpecimen title="Inspector nav" note="Same treatment for nested drawer panels.">
+            <IconTabs
+              tabs={INSPECTOR_TABS}
+              value={inspectorView}
+              onChange={setInspectorView}
+              aria-label="Inspector navigation preview"
+            />
+          </ControlSpecimen>
         </div>
       </Block>
 
       <Block title="Hue family">
         <p className="text-[11px] text-zinc-500 dark:text-zinc-400">
-          The lavender is the structural accent: agent names, focus rings, selected states, and sub-agent boundaries.
-          The amber is deliberately warmer, so it stays reserved for attention and warning moments.
+          The lavender is the structural accent: agent names, selected states, and sub-agent boundaries. The amber is
+          deliberately warmer, so it stays reserved for attention and warning moments.
         </p>
 
         <Example label="Brand family — soft lavender">
@@ -136,8 +181,10 @@ function PalettePreview() {
           {ROLES.map((c) => (
             <div key={c.name}>
               <div
-                className="h-14 w-full rounded-md ring-1 ring-zinc-950/5 dark:ring-white/10"
-                style={{ backgroundColor: c.hex }}
+                className={`h-14 w-full rounded-md ring-1 ring-zinc-950/5 dark:ring-white/10 ${
+                  c.name === 'focus' ? 'bg-focus-500' : ''
+                }`}
+                style={c.name === 'focus' ? undefined : { backgroundColor: c.hex }}
               />
               <div className="mt-1.5 text-[11px] font-medium text-zinc-950 dark:text-white">{c.role}</div>
               <div className="font-mono text-[10px] text-zinc-500 dark:text-zinc-400">

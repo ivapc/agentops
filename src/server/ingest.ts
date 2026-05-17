@@ -13,6 +13,7 @@ export interface RawSpan {
   start_time: number
   end_time: number
   span_kind?: number
+  span_status?: string
   service_name?: string
   attributes?: Record<string, unknown>
 }
@@ -39,6 +40,7 @@ function normalize(r: RawSpan): Span {
     name: r.name,
     startMs: Math.floor(r.start_time / 1_000_000),
     endMs: Math.floor(r.end_time / 1_000_000),
+    ...(r.span_status === 'ERROR' ? { hasError: true } : {}),
     ...classifySpan(r.name, r.attributes ?? {}),
   }
 }

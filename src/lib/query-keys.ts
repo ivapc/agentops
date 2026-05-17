@@ -2,12 +2,13 @@ export const queryKeys = {
   sessions: {
     all: () => ['sessions'] as const,
     window: (days: number) => ['sessions', { days }] as const,
+    currentUserWindow: (days: number, userId: string) => ['sessions', 'current-user', userId, { days }] as const,
     detail: (id: string) => ['sessions', id] as const,
     detailWindow: (id: string, days: number) => ['sessions', id, { days }] as const,
   },
-  traces: {
-    all: () => ['traces'] as const,
-    detail: (id: string) => ['traces', id] as const,
+  runs: {
+    all: () => ['runs'] as const,
+    detail: (id: string) => ['runs', id] as const,
   },
   inbox: {
     all: () => ['inbox'] as const,

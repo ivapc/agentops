@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { aggregateSessions, findSessionKey } from './openobserve'
+import { aggregateSessions, findSessionKey, mapLatencyRow, pickIdentityValue } from './shared'
 
 const NS_PER_MS = 1_000_000
 
@@ -149,5 +149,44 @@ describe('aggregateSessions', () => {
       invokeAgent({ trace: 't3', span: 'c', agent: 'C', hex: '3333', startMs: 3000 }),
     ]
     expect(aggregateSessions(hits, 2)).toHaveLength(2)
+  })
+})
+
+describe('mapLatencyRow', () => {
+  it('maps p{N}_ms aliases and rounds non-integers', () => {
+    expect(
+      mapLatencyRow({ name: 'chat gpt-4o', p50_ms: 100.4, p90_ms: 200.6, p95_ms: 300, p99_ms: 400, count: 27 }),
+    ).toEqual({ name: 'chat gpt-4o', p50Ms: 100, p90Ms: 201, p95Ms: 300, p99Ms: 400, count: 27 })
+  })
+
+  it('falls back to operation_name when name is absent', () => {
+    expect(mapLatencyRow({ operation_name: 'invoke_agent Bot' })).toMatchObject({ name: 'invoke_agent Bot' })
+  })
+
+  it('clamps null/undefined/negative to zero', () => {
+    expect(mapLatencyRow({ name: 'x', p50_ms: null, p90_ms: undefined, p95_ms: -5, p99_ms: 'NaN' })).toEqual({
+      name: 'x',
+      p50Ms: 0,
+      p90Ms: 0,
+      p95Ms: 0,
+      p99Ms: 0,
+      count: 0,
+    })
+  })
+})
+
+describe('pickIdentityValue', () => {
+  it('returns id when userId is set', () => {
+    expect(pickIdentityValue({ userId: 'u1' })).toEqual({ kind: 'id', value: 'u1' })
+  })
+  it('prefers userId over userName when both are set', () => {
+    expect(pickIdentityValue({ userId: 'u1', userName: 'alice' })).toEqual({ kind: 'id', value: 'u1' })
+  })
+  it('returns name when only userName is set', () => {
+    expect(pickIdentityValue({ userName: 'alice' })).toEqual({ kind: 'name', value: 'alice' })
+  })
+  it('returns undefined when nothing is set', () => {
+    expect(pickIdentityValue(undefined)).toBeUndefined()
+    expect(pickIdentityValue({})).toBeUndefined()
   })
 })

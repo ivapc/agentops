@@ -1,38 +1,38 @@
-# Sessions vs Live
+# Sessions vs Runs
 
-Two top-level entries in the UI, two different jobs.
+Two top-level entries in the UI, two different jobs. (`/live` redirects to `/runs` for bookmarks.)
 
 ## The split
 
 **Sessions — pure observability.**
 The conversation history of an agent. Always read-only. Today it's reconstructed from telemetry; later it may come from a DB mirror, an external API, or a paste-in. The page doesn't care where spans come from, only that it gets them.
 
-**Live — the active / current surface.**
-One execution at a time. The page is the home for everything in this family: live-tailing a run as spans flush in from the exporter, hooking up to a running app and streaming its events, or actually initiating a run against an external agent. Today, with none of that wired up yet, `/live` is an empty-state landing page; `/live/$runId` renders any single trace you navigate to.
+**Runs — the active / single-execution surface.**
+One OTLP trace at a time (URL param `$runId` is typically the backend `trace_id`). The landing page (`/runs`) will host live-tail, streamed events, or “start an agent here” workflows. Until that lands, `/runs` stays empty-state; `/runs/$runId` is the standalone run viewer (`ConversationView`).
 
-The internal unit is called a `run`. The page is called Live because that's what makes it different from Sessions — it's where things in motion go. Finished runs surface under Sessions (joined by session id, with an agent-instance-hex fallback), not as a separate "all runs" list.
+The internal unit stays a **`run`** (single trace slice). Completed work that shares a **`session`** id rolls up under **Sessions** instead of a universal “all runs” list today.
 
-| | Sessions | Live |
+| | Sessions | Runs |
 |---|---|---|
-| Job | Read what happened | Watch / drive what's happening |
+| Job | Read what happened (multi-run thread) | Watch / inspect one execution |
 | Unit | A conversation (many runs) | One run |
 | Read-only? | Always | Currently — not by design |
 | Data origin (today) | Telemetry, joined by `session.id` / `gen_ai.conversation.id` / `ag_ui_thread_id` / agent-instance-hex fallback | Telemetry, one `trace_id` per page |
 | Data origin (future) | + DB, external feeds | + live exporter stream, + direct invocation of an external agent |
 
-A run that doesn't resolve to a session id (no attribute, no `invoke_agent` hex to fall back on) currently has no listing surface. It's still reachable by direct `/live/$runId` URL — but it won't appear anywhere until live-tail or initiate-a-run ships.
+A run that doesn't resolve to a session id (no attribute, no `invoke_agent` hex to fall back on) currently has no listing surface. Reach it directly as `/runs/$runId` (legacy `/live/$runId` redirects) until a runs list lands.
 
 ## Session detail (`/sessions/$sessionId`)
 
-Toggle `[Conversation | Spans]`.
+Default tabs: **`Conversation`** vs **`Spans`**. Search params use `view=spans`; legacy `view=trace` is still parsed as spans.
 
 **Conversation tab (default).** Two-column.
-- **Left** — `TurnsView` (`src/components/turns-view.tsx`): token-usage table (`# · Time · In · Out · Errs · Turn · Σ · Dur` + Total), the breakdown panel below (`System prompts · Tool definitions · Messages · Prompt cache · Total`) computed by `useBreakdowns` (`src/lib/use-breakdowns.ts`) on top of `breakdownChat` in `src/lib/tokens.ts`, then one card per turn with status / cost / duration.
+- **Left** — `TurnsView` (`src/components/turns-view.tsx`): token-usage table (`# · Time · In · Out · Errs · Turn · Σ · Dur` + Total), the breakdown panel below (`System prompts · Tool definitions · Messages · Prompt cache · Total`) computed by `useBreakdowns` (`src/hooks/use-breakdowns.ts`) on top of `breakdownChat` in `src/lib/tokens.ts`, then one card per turn with status / cost / duration.
 - **Right** — `ConversationView` (`src/components/conversation-view.tsx`): chat bubbles, paired tool cards, agent cards. Renders `ConversationEvent[]` from `src/lib/conversation.ts`.
 
-**Spans tab.** `TreeView` (waterfall) + "Select a span" detail panel. The debug-primitive shape for when the conversation isn't enough.
+**Spans tab.** Session span tree (`SessionInspectLayout`, `session-inspect-drawer.tsx`) + turn strip + span detail (`DetailPanel`). Hides naked `http` transport spans while keeping subtree rollups contiguous.
 
-## Live detail (`/live/$runId`)
+## Run detail (`/runs/$runId`)
 
 Just the conversation, full width — `ConversationView` and nothing else. One run is one assistant turn; the aggregate-per-turn panel has nothing to chew on at this scale.
 
@@ -45,11 +45,11 @@ The Spans/waterfall view can come back behind an opt-in if needed — not the de
 
 ## List pages
 
-Only `/sessions` is a list. Its toolbar pieces (`SearchInput`, `StatusPills`) plus `formatAgo` / `formatCost` / `truncateId` in `src/lib/format.ts` are the shared primitives any future Live list (active runs, queued runs) should reuse.
+Only `/sessions` is a list today. Toolbar pieces (`SearchInput`, `StatusPills`) plus `formatAgo` / `formatCost` / `truncateId` in `src/lib/format.ts` should be reused when `/runs` gains an active-queue / history list.
 
 ## Data fetching
 
-Route loaders call `context.queryClient.ensureQueryData(...)` and components read via `useQuery(...)` — keys + `queryOptions` live in `src/lib/queries.ts`. SSR hydration is wired through `@tanstack/react-router-ssr-query` in `src/router.tsx`. Default `QueryClient` settings (no custom `staleTime` / `gcTime` / `retry`).
+Route loaders call `context.queryClient.ensureQueryData(...)` and routes read via `useQuery(...)`. Per-route `queryOptions` ship next to loaders (e.g. `sessions/-data.ts`, `runs/-data.ts`); stable keys live in `src/lib/query-keys.ts`.
 
 ## Where to extend
 
@@ -60,4 +60,4 @@ Route loaders call `context.queryClient.ensureQueryData(...)` and components rea
 | Add a format helper | `src/lib/format.ts` — don't reinvent |
 | Support a new tokenizer family | Extend `resolveFamily` in `src/lib/tokens.ts`. Lazy-load the encoder data |
 | Add a new data source for Sessions (DB, external) | The session detail loader in `src/routes/sessions/$sessionId.tsx`. Page only consumes `Span[]`, so anything that yields spans works |
-| Add live tail / direct ingest | `src/routes/live/$runId.tsx`: replace the one-shot fetch with a subscription that pushes new spans into the same `ConversationView`. For an active-runs list, build a new view on top of `tracesQuery` / `listRecentTraces` |
+| Add live tail / direct ingest | `src/routes/runs/$runId.tsx`: replace the one-shot `runSpansQuery` fetch with a subscription that pushes spans into `ConversationView`. Lists can reuse `runSpansQuery` keys from `runs/-data.ts` or `listRecentTraces()` in telemetry |

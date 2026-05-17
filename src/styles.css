@@ -20,6 +20,8 @@
   --color-accent-900: #663866;
   --color-accent-950: #3f213f;
 
+  --color-focus-500: var(--color-zinc-950);
+
   --color-accent-warm-50: #fff9ed;
   --color-accent-warm-100: #fff0cf;
   --color-accent-warm-200: #ffe2a3;
@@ -95,6 +97,7 @@
   --primary: oklch(0.985 0 0);
   --primary-foreground: oklch(0.205 0 0);
   --radius: 0.5rem;
+  --color-focus-500: var(--color-zinc-400);
 }
 
 /* Tighten Streamdown's default vertical rhythm for the dense bubble layout. */

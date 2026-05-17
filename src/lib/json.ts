@@ -14,3 +14,14 @@ export function parseJson(v: unknown): JsonValue | undefined {
     return undefined
   }
 }
+
+// Format any value for inspector display. Strings pass through; everything
+// else stringifies with indentation. Survives circular refs without throwing.
+export function formatJson(value: unknown): string {
+  if (typeof value === 'string') return value
+  try {
+    return JSON.stringify(value, null, 2)
+  } catch {
+    return String(value)
+  }
+}

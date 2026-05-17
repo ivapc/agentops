@@ -56,6 +56,7 @@ export interface Classification {
   operation: Operation
   model?: string
   agentName?: string
+  agentDescription?: string
   toolName?: string
   toolCallId?: string
   tokens?: number
@@ -67,7 +68,13 @@ export interface Classification {
   llmOutput?: JsonValue
   toolResult?: JsonValue
   cachedTokens?: number
+  reasoningTokens?: number
   toolDefinitions?: JsonValue
+  finishReasons?: string[]
+  provider?: string
+  ttftMs?: number
+  responseId?: string
+  systemFingerprint?: string
   sessionId?: string
   sessionSource?: 'attribute' | 'agent-instance'
 }
@@ -110,9 +117,29 @@ export function classifySpan(name: string, attrs: Record<string, unknown>): Clas
   const cost = pickNumber(attrs, ['llm_usage_cost_total', 'gen_ai.usage.cost_total'])
   if (cost !== undefined) c.costUsd = cost
 
+  // Provider name. `gen_ai.system` is the deprecated form; still emitted by
+  // many SDKs (e.g. OpenLLMetry) alongside the newer `gen_ai.provider.name`.
+  const provider = pickString(attrs, ['gen_ai.provider.name', 'gen_ai_provider_name', 'gen_ai.system', 'gen_ai_system'])
+  if (provider) c.provider = provider
+
+  // Time to first chunk is emitted in seconds (float). Convert to ms to match
+  // our duration convention everywhere else.
+  const ttftSec = pickNumber(attrs, ['gen_ai.response.time_to_first_chunk', 'gen_ai_response_time_to_first_chunk'])
+  if (ttftSec !== undefined && ttftSec >= 0) c.ttftMs = ttftSec * 1000
+
+  const reasoning = pickNumber(attrs, [
+    'gen_ai.usage.reasoning.output_tokens',
+    'gen_ai_usage_reasoning_output_tokens',
+    'gen_ai.usage.reasoning_output_tokens',
+    'gen_ai_usage_reasoning_output.tokens',
+  ])
+  if (reasoning !== undefined) c.reasoningTokens = reasoning
+
   if (operation === 'invoke_agent') {
     const agentName = pickAgentName(name, attrs)
     if (agentName) c.agentName = agentName
+    const description = pickString(attrs, ['gen_ai.agent.description', 'gen_ai_agent_description'])
+    if (description) c.agentDescription = description
   }
 
   // Session correlation. Priority (lowest tier shown first in code, applied
@@ -170,6 +197,20 @@ export function classifySpan(name: string, attrs: Record<string, unknown>): Clas
       pickString(attrs, ['gen_ai.tool.definitions', 'gen_ai_tool_definitions', 'llm_request_functions']),
     )
     if (toolDefs !== undefined) c.toolDefinitions = toolDefs
+
+    const finish = pickStringArray(attrs, ['gen_ai.response.finish_reasons', 'gen_ai_response_finish_reasons'])
+    if (finish && finish.length > 0) c.finishReasons = finish
+
+    const responseId = pickString(attrs, ['gen_ai.response.id', 'gen_ai_response_id'])
+    if (responseId) c.responseId = responseId
+
+    const fingerprint = pickString(attrs, [
+      'openai.response.system_fingerprint',
+      'openai_response_system_fingerprint',
+      'gen_ai.openai.response.system_fingerprint',
+      'gen_ai_openai_response_system_fingerprint',
+    ])
+    if (fingerprint) c.systemFingerprint = fingerprint
   }
 
   return c
@@ -219,6 +260,35 @@ function pickString(attrs: Record<string, unknown>, keys: readonly string[]): st
   for (const k of keys) {
     const v = attrs[k]
     if (typeof v === 'string' && v.length > 0) return v
+  }
+  return undefined
+}
+
+// Tolerates real arrays, JSON-encoded arrays (OpenObserve flattens array
+// attributes to strings), and single-value strings (some SDKs emit one reason
+// instead of an array).
+function pickStringArray(attrs: Record<string, unknown>, keys: readonly string[]): string[] | undefined {
+  for (const k of keys) {
+    const v = attrs[k]
+    if (Array.isArray(v)) {
+      const out = v.filter((x): x is string => typeof x === 'string' && x.length > 0)
+      if (out.length) return out
+    }
+    if (typeof v === 'string' && v.length > 0) {
+      const trimmed = v.trim()
+      if (trimmed.startsWith('[')) {
+        try {
+          const parsed = JSON.parse(trimmed)
+          if (Array.isArray(parsed)) {
+            const out = parsed.filter((x): x is string => typeof x === 'string' && x.length > 0)
+            if (out.length) return out
+          }
+        } catch {
+          // fall through to single-string
+        }
+      }
+      return [trimmed]
+    }
   }
   return undefined
 }

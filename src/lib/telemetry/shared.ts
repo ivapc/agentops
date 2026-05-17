@@ -1,0 +1,227 @@
+import { extractAgentInstanceId, extractAgentName, SESSION_ID_KEYS, SESSION_TITLE_KEYS } from '#/lib/classify-span'
+import { asMessages } from '#/lib/conversation'
+import { parseJson } from '#/lib/json'
+import type { LatencyRow, SessionSummary } from './types'
+
+export type IdentityFilter = { userId?: string; userName?: string }
+
+export function pickIdentityValue(
+  opts: IdentityFilter | undefined,
+): { kind: 'id' | 'name'; value: string } | undefined {
+  if (opts?.userId) return { kind: 'id', value: opts.userId }
+  if (opts?.userName) return { kind: 'name', value: opts.userName }
+  return undefined
+}
+
+export function mapLatencyRow(row: Record<string, unknown>): LatencyRow {
+  const toMs = (v: unknown) => {
+    const n = Math.round(Number(v ?? 0))
+    return Number.isFinite(n) && n > 0 ? n : 0
+  }
+  return {
+    name: String(row.name ?? row.operation_name ?? '?'),
+    p50Ms: toMs(row.p50_ms),
+    p90Ms: toMs(row.p90_ms),
+    p95Ms: toMs(row.p95_ms),
+    p99Ms: toMs(row.p99_ms),
+    count: Number(row.count ?? 0),
+  }
+}
+
+export function aggregateSessions(hits: Array<Record<string, unknown>>, limit: number): SessionSummary[] {
+  const rowsByTrace = new Map<string, Array<Record<string, unknown>>>()
+  for (const h of hits) {
+    const traceId = String(h.trace_id ?? '')
+    if (!traceId) continue
+    const arr = rowsByTrace.get(traceId) ?? []
+    arr.push(h)
+    rowsByTrace.set(traceId, arr)
+  }
+
+  const tracesBySession = new Map<string, TraceSession[]>()
+  for (const [traceId, rows] of rowsByTrace) {
+    const ts = resolveTraceSession(traceId, rows)
+    if (!ts) continue
+    const arr = tracesBySession.get(ts.sessionId) ?? []
+    arr.push(ts)
+    tracesBySession.set(ts.sessionId, arr)
+  }
+
+  const out: SessionSummary[] = []
+  for (const [sessionId, traces] of tracesBySession) {
+    const source: 'attribute' | 'agent-instance' = traces.some((t) => t.source === 'attribute')
+      ? 'attribute'
+      : 'agent-instance'
+    const s: SessionSummary = {
+      sessionId,
+      title: traces
+        .slice()
+        .sort((a, b) => b.endMs - a.endMs)
+        .find((t) => t.title)?.title,
+      userName: pickLatest(traces, (t) => t.userName),
+      userId: pickLatest(traces, (t) => t.userId),
+      host: pickLatest(traces, (t) => t.host),
+      source,
+      startedAtMs: Math.min(...traces.map((t) => t.startMs)),
+      lastSeenMs: Math.max(...traces.map((t) => t.endMs)),
+      traceCount: traces.length,
+      agents: [...new Set(traces.flatMap((t) => [...t.agents]))],
+      firstInput: traces
+        .slice()
+        .sort((a, b) => a.startMs - b.startMs)
+        .find((t) => t.firstInput)?.firstInput,
+    }
+    const totalTokens = traces.reduce((acc, t) => acc + t.tokens, 0)
+    if (totalTokens > 0) s.totalTokens = totalTokens
+    const totalCost = traces.reduce((acc, t) => acc + t.cost, 0)
+    if (totalCost > 0) s.totalCostUsd = totalCost
+    if (traces.some((t) => t.hasError)) s.hasError = true
+    out.push(s)
+  }
+
+  out.sort((a, b) => b.lastSeenMs - a.lastSeenMs)
+  return out.slice(0, limit)
+}
+
+export function findSessionKey(
+  rows: Array<Record<string, unknown>>,
+): { id: string; source: 'attribute' | 'agent-instance' } | undefined {
+  for (const h of rows) {
+    for (const k of SESSION_ID_KEYS) {
+      const v = h[k]
+      if (typeof v === 'string' && v) return { id: v, source: 'attribute' }
+    }
+  }
+  // Heuristic: hex of the earliest-starting invoke_agent. Parent starts
+  // before child, so the root agent is always first by start_time.
+  let root: Record<string, unknown> | undefined
+  for (const h of rows) {
+    const op = h.operation_name
+    if (typeof op !== 'string' || !op.startsWith('invoke_agent ')) continue
+    if (!root || Number(h.start_time ?? 0) < Number(root.start_time ?? 0)) root = h
+  }
+  if (!root) return undefined
+  const hex = extractAgentInstanceId(String(root.operation_name))
+  return hex ? { id: hex, source: 'agent-instance' } : undefined
+}
+
+type TraceSession = {
+  traceId: string
+  sessionId: string
+  source: 'attribute' | 'agent-instance'
+  startMs: number
+  endMs: number
+  agents: Set<string>
+  title?: string
+  userName?: string
+  userId?: string
+  host?: string
+  firstInput?: string
+  tokens: number
+  cost: number
+  hasError: boolean
+}
+
+function resolveTraceSession(traceId: string, rows: Array<Record<string, unknown>>): TraceSession | undefined {
+  const key = findSessionKey(rows)
+  if (!key) return undefined
+  return { traceId, sessionId: key.id, source: key.source, ...rollupTrace(rows) }
+}
+
+function rollupTrace(rows: Array<Record<string, unknown>>): Omit<TraceSession, 'traceId' | 'sessionId' | 'source'> {
+  let startMs = Number.POSITIVE_INFINITY
+  let endMs = 0
+  const agents = new Set<string>()
+  let title: string | undefined
+  let userName: string | undefined
+  let userId: string | undefined
+  let host: string | undefined
+  let firstInput: string | undefined
+  let firstInputAtNs = Number.POSITIVE_INFINITY
+  let tokens = 0
+  let cost = 0
+  let hasError = false
+  for (const h of rows) {
+    const s = Math.floor(Number(h.start_time ?? 0) / 1_000_000)
+    const e = Math.floor(Number(h.end_time ?? 0) / 1_000_000)
+    if (s && s < startMs) startMs = s
+    if (e > endMs) endMs = e
+    if (typeof h.operation_name === 'string') {
+      const agent = extractAgentName(h.operation_name)
+      if (agent) agents.add(agent)
+    }
+    if (!title) title = pickTitle(h)
+    if (!userName) userName = pickString(h, ['user_name'])
+    if (!userId) userId = pickString(h, ['user_id'])
+    if (!host) host = pickString(h, ['host_name', 'service_name'])
+    if (h.gen_ai_operation_name === 'chat') {
+      const t = num(h.llm_usage_tokens_total)
+      if (t) tokens += t
+      const c = num(h.llm_usage_cost_total)
+      if (c) cost += c
+      const startNs = Number(h.start_time ?? 0)
+      if (startNs && startNs < firstInputAtNs) {
+        const candidate = extractFirstUserText(h.llm_input)
+        if (candidate) {
+          firstInput = candidate
+          firstInputAtNs = startNs
+        }
+      }
+    }
+    if (h.span_status === 'ERROR') hasError = true
+  }
+  return {
+    startMs: startMs === Number.POSITIVE_INFINITY ? 0 : startMs,
+    endMs,
+    agents,
+    title,
+    userName,
+    userId,
+    host,
+    firstInput,
+    tokens,
+    cost,
+    hasError,
+  }
+}
+
+const FIRST_INPUT_MAX_CHARS = 200
+function extractFirstUserText(raw: unknown): string | undefined {
+  for (const msg of asMessages(parseJson(raw))) {
+    if (msg.role !== 'user') continue
+    for (const part of msg.parts) {
+      if (part.kind === 'text') return part.content.trim().slice(0, FIRST_INPUT_MAX_CHARS) || undefined
+    }
+  }
+  return undefined
+}
+
+function pickLatest(traces: TraceSession[], pick: (trace: TraceSession) => string | undefined): string | undefined {
+  return traces
+    .slice()
+    .sort((a, b) => b.endMs - a.endMs)
+    .map(pick)
+    .find((v): v is string => typeof v === 'string' && v.length > 0)
+}
+
+function pickTitle(row: Record<string, unknown>): string | undefined {
+  for (const key of SESSION_TITLE_KEYS) {
+    const v = row[key]
+    if (typeof v === 'string' && v.trim()) return v.trim()
+  }
+  return undefined
+}
+
+function pickString(row: Record<string, unknown>, keys: string[]): string | undefined {
+  for (const key of keys) {
+    const v = row[key]
+    if (typeof v === 'string' && v.trim()) return v.trim()
+  }
+  return undefined
+}
+
+function num(v: unknown): number | undefined {
+  if (v === null || v === undefined || v === '') return undefined
+  const n = Number(v)
+  return Number.isFinite(n) ? n : undefined
+}

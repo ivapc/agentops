@@ -37,7 +37,7 @@ export function AutoRefreshSelect({ value, onChange, onRefresh, loading = false 
         aria-label="Refresh now"
         onClick={onRefresh}
         disabled={loading}
-        className="inline-flex w-9 cursor-pointer items-center justify-center border-r border-zinc-950/10 transition-colors hover:bg-zinc-950/[0.03] focus:outline-hidden focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent-500/80 disabled:cursor-wait disabled:hover:bg-transparent dark:border-white/10 dark:hover:bg-white/[0.07] dark:focus-visible:ring-accent-400/80"
+        className="inline-flex w-9 cursor-pointer items-center justify-center border-r border-zinc-950/10 transition-colors hover:bg-zinc-950/[0.03] focus:outline-hidden focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-focus-500/80 disabled:cursor-wait disabled:hover:bg-transparent dark:border-white/10 dark:hover:bg-white/[0.07]"
       >
         <ArrowPathIcon
           className={[
@@ -49,12 +49,12 @@ export function AutoRefreshSelect({ value, onChange, onRefresh, loading = false 
       <Dropdown>
         <DropdownButton
           as="button"
-          className="inline-flex h-full cursor-pointer items-center gap-2 px-3 whitespace-nowrap transition-colors hover:bg-zinc-950/[0.03] focus:outline-hidden focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent-500/80 dark:hover:bg-white/[0.07] dark:focus-visible:ring-accent-400/80"
+          className="inline-flex h-full cursor-pointer items-center gap-2 px-3 whitespace-nowrap transition-colors hover:bg-zinc-950/[0.03] focus:outline-hidden focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-focus-500/80 dark:hover:bg-white/[0.07]"
         >
           <span>{selected.selectedLabel}</span>
           <ChevronDownIcon data-slot="icon" className="size-4 fill-zinc-500 opacity-60 dark:fill-zinc-400" />
         </DropdownButton>
-        <DropdownMenu anchor="bottom end" className="min-w-40">
+        <DropdownMenu anchor="bottom end" className="z-[60] min-w-40">
           {AUTO_REFRESH_OPTIONS.map((option) => (
             <DropdownItem key={option.value} onClick={() => onChange(option.value)} className={controlMenuItemClass}>
               {value === option.value ? <CheckIcon data-slot="icon" /> : <span data-slot="icon" />}

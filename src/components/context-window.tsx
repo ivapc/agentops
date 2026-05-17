@@ -1,5 +1,5 @@
 import { Popover, PopoverButton, PopoverPanel } from '@headlessui/react'
-import { useMemo } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import { useBreakdowns } from '#/hooks/use-breakdowns'
 import type { Span } from '#/lib/spans'
 import { formatCost } from '#/lib/spans'
@@ -11,7 +11,7 @@ interface ContextWindowProps {
 // Conservative context-window lookup. Wrong values are worse than missing — we
 // fall back to a "—" label rather than guessing when the model string doesn't
 // match anything known.
-function contextWindowFor(model: string | undefined): number | null {
+export function contextWindowFor(model: string | undefined): number | null {
   const m = (model ?? '').toLowerCase()
   if (!m) return null
   if (m.startsWith('claude')) return 200_000
@@ -26,7 +26,7 @@ function contextWindowFor(model: string | undefined): number | null {
   return null
 }
 
-function formatTokens(n: number): string {
+export function formatTokens(n: number): string {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`
   if (n >= 10_000) return `${(n / 1000).toFixed(0)}K`
   if (n >= 1000) return `${(n / 1000).toFixed(1)}K`
@@ -35,7 +35,11 @@ function formatTokens(n: number): string {
 
 export function ContextWindow({ spans }: ContextWindowProps) {
   const chatSpans = useMemo(() => spans.filter((s) => s.operation === 'chat'), [spans])
-  const { ready, total } = useBreakdowns(chatSpans)
+  // Breakdown numbers only appear inside the popover panel — defer the fetch
+  // until the user shows intent to open it (hover/focus/click on the trigger).
+  const [primed, setPrimed] = useState(false)
+  const prime = useCallback(() => setPrimed(true), [])
+  const { ready, total } = useBreakdowns(chatSpans, { enabled: primed })
 
   // Peak input across turns — the most the model had to hold at once.
   const peakSpan = useMemo(() => {
@@ -60,6 +64,9 @@ export function ContextWindow({ spans }: ContextWindowProps) {
   return (
     <Popover className="relative">
       <PopoverButton
+        onMouseEnter={prime}
+        onFocus={prime}
+        onClick={prime}
         className="inline-flex h-8 items-center gap-2 rounded-md px-3 text-xs font-medium text-zinc-500 transition-colors hover:bg-zinc-950/5 hover:text-zinc-950 focus:outline-hidden focus-visible:ring-2 focus-visible:ring-zinc-950/20 dark:text-zinc-400 dark:hover:bg-white/5 dark:hover:text-white dark:focus-visible:ring-white/20"
         aria-label="Model context usage"
       >

@@ -1,8 +1,10 @@
-import { ArrowDownIcon, ChevronDownIcon, ChevronRightIcon } from '@heroicons/react/16/solid'
+import { ArrowDownIcon, ChevronDownIcon, ChevronRightIcon, EyeIcon, EyeSlashIcon } from '@heroicons/react/16/solid'
 import { useCallback, useMemo, useState } from 'react'
 import { StickToBottom, useStickToBottomContext } from 'use-stick-to-bottom'
 import { CopyButton } from '#/components/copy-button'
 import { Markdown } from '#/components/markdown'
+import { ScaffoldGroup } from '#/components/scaffold-group'
+import { groupScaffolding } from '#/lib/agui-scaffolding'
 import { buildConversation, type ConversationEvent } from '#/lib/conversation'
 import { estimateTokens, formatTime, formatTokens, metricTone } from '#/lib/format'
 import type { Span } from '#/lib/spans'
@@ -57,6 +59,13 @@ export function ConversationView({ spans, onSelect }: ConversationViewProps) {
     if (spanId) onSelect(spanId)
   }
 
+  const items = useMemo(() => groupScaffolding(topLevel), [topLevel])
+  // Escape hatch for when the scaffolding detector misclassifies — render
+  // every message raw, no folding. The classifier is a content heuristic and
+  // will drift as CopilotKit changes its prompts.
+  const [showAll, setShowAll] = useState(false)
+  const hasScaffolding = useMemo(() => items.some((i) => i.kind === 'scaffold_group'), [items])
+
   if (events.length === 0) {
     return (
       <div className="px-3 py-6 text-center text-xs text-zinc-400 dark:text-zinc-600">
@@ -71,12 +80,38 @@ export function ConversationView({ spans, onSelect }: ConversationViewProps) {
     <StickToBottom className="relative h-full overflow-hidden" resize="smooth" initial="instant">
       <StickToBottom.Content
         scrollClassName="overflow-y-auto"
-        className="flex min-h-full flex-col gap-3 px-3 py-3 pb-16 sm:px-4"
+        className={`flex min-h-full flex-col gap-3 px-3 ${hasScaffolding ? 'pt-12' : 'pt-3'} pb-16 sm:px-4`}
       >
-        {topLevel.map((event) => renderEvent(event, ctx))}
+        {showAll
+          ? topLevel.map((event) => renderEvent(event, ctx))
+          : items.map((item) =>
+              item.kind === 'scaffold_group' ? (
+                <ScaffoldGroup
+                  key={`scaffold-${item.messages[0].spanId ?? item.messages[0].timestamp}-${item.messages[0].seq}`}
+                  messages={item.messages}
+                />
+              ) : (
+                renderEvent(item.event, ctx)
+              ),
+            )}
       </StickToBottom.Content>
+      {hasScaffolding && <ShowAllToggle showAll={showAll} onToggle={() => setShowAll((v) => !v)} />}
       <ConversationScrollButton />
     </StickToBottom>
+  )
+}
+
+function ShowAllToggle({ showAll, onToggle }: { showAll: boolean; onToggle: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      title={showAll ? 'Hide AG-UI scaffolding' : 'Show all messages including scaffolding'}
+      className="absolute right-3 top-3 z-10 inline-flex items-center gap-1.5 rounded-md border border-zinc-950/10 bg-white/90 px-2 py-1 text-[10px] font-semibold uppercase tracking-wider text-zinc-600 shadow-sm hover:bg-zinc-50 dark:border-white/10 dark:bg-zinc-900/90 dark:text-zinc-300 dark:hover:bg-zinc-800"
+    >
+      {showAll ? <EyeSlashIcon className="size-3" /> : <EyeIcon className="size-3" />}
+      {showAll ? 'Hide scaffolding' : 'Show all'}
+    </button>
   )
 }
 
@@ -104,7 +139,7 @@ function renderEvent(event: ConversationEvent, ctx: EventContext) {
   if (event.kind === 'tool_result') return null
 
   if (event.kind === 'message') {
-    const key = `msg-${event.spanId ?? ''}-${event.timestamp}-${event.role}`
+    const key = `msg-${event.spanId ?? ''}-${event.seq}`
     return <MessageBubble key={key} event={event} />
   }
 
@@ -154,14 +189,10 @@ function MessageBubble({ event }: MessageBubbleProps) {
 
   if (isUser) {
     return (
-      <div className="group flex justify-end">
-        <div className="relative max-w-[75%] rounded-2xl rounded-tr-sm bg-zinc-100 px-3 py-2 text-xs text-zinc-950 dark:bg-white/10 dark:text-white">
+      <div className="flex items-start justify-end">
+        <div className="max-w-[75%] rounded-2xl rounded-tr-sm bg-zinc-100 px-3 py-2 text-xs text-zinc-950 dark:bg-white/10 dark:text-white">
           <Markdown>{event.content}</Markdown>
           <div className="mt-1 flex items-center justify-end gap-1 text-[10px] text-zinc-500 dark:text-zinc-400">
-            <CopyButton
-              value={event.content}
-              className="opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100"
-            />
             <span>{formatTime(event.timestamp)}</span>
           </div>
         </div>
@@ -170,25 +201,23 @@ function MessageBubble({ event }: MessageBubbleProps) {
   }
 
   return (
-    <div className="group w-fit max-w-[85%] px-2 py-1 text-xs">
-      {event.role !== 'assistant' && (
-        <div className="mb-0.5 text-[10px] font-semibold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
-          {event.role}
-        </div>
-      )}
-      <Markdown>{event.content}</Markdown>
-      <div className="mt-1 flex items-center gap-2 text-[10px] text-zinc-500 dark:text-zinc-400">
-        <span>{formatTime(event.timestamp)}</span>
-        {hasTokens && (
-          <>
-            <span aria-hidden>•</span>
-            <TokenBadge input={event.inputTokens} output={event.outputTokens} />
-          </>
+    <div className="group flex w-fit max-w-[85%] items-start gap-1.5 px-2 py-1 text-xs">
+      <div className="min-w-0">
+        {event.role !== 'assistant' && (
+          <div className="mb-0.5 text-[10px] font-semibold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
+            {event.role}
+          </div>
         )}
-        <CopyButton
-          value={event.content}
-          className="opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100"
-        />
+        <Markdown>{event.content}</Markdown>
+        <div className="mt-1 flex items-center gap-2 text-[10px] text-zinc-500 dark:text-zinc-400">
+          <span>{formatTime(event.timestamp)}</span>
+          {hasTokens && (
+            <>
+              <span aria-hidden>•</span>
+              <TokenBadge input={event.inputTokens} output={event.outputTokens} />
+            </>
+          )}
+        </div>
       </div>
     </div>
   )

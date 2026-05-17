@@ -5,6 +5,8 @@ export type TraceFetch = { kind: 'found'; spans: Span[]; truncated?: boolean } |
 export interface GetTraceOpts {
   fromUs?: number
   toUs?: number
+  userId?: string
+  userName?: string
 }
 
 export interface ListTracesOpts {
@@ -43,6 +45,7 @@ export interface SessionSummary {
   lastSeenMs: number
   traceCount: number
   agents: string[]
+  firstInput?: string
   totalTokens?: number
   totalCostUsd?: number
   hasError?: boolean
@@ -52,6 +55,8 @@ export interface ListSessionsOpts {
   fromUs?: number
   toUs?: number
   limit?: number
+  userId?: string
+  userName?: string
 }
 
 export type InventoryDiscoveryKind = 'new_tool' | 'new_agent'
@@ -63,6 +68,23 @@ export interface InventoryObservation {
   firstSeenMs: number
   lastSeenMs: number
   traceId?: string
+}
+
+export type LatencyKind = 'generation' | 'observation'
+
+export interface LatencyRow {
+  name: string
+  p50Ms: number
+  p90Ms: number
+  p95Ms: number
+  p99Ms: number
+  count: number
+}
+
+export interface LatencyOpts {
+  fromUs?: number
+  toUs?: number
+  limit?: number
 }
 
 export type SessionFetch =
@@ -89,6 +111,10 @@ export interface TelemetryProvider {
   listSessions?(opts?: ListSessionsOpts): Promise<{ sessions: SessionSummary[]; truncated: boolean }>
   getSession?(sessionId: string, opts?: GetTraceOpts): Promise<SessionFetch>
   discoverInventory?(kind: InventoryDiscoveryKind, opts?: GetTraceOpts): Promise<InventoryObservation[]>
+
+  // Latency percentiles grouped by operation_name. `generation` filters to
+  // LLM calls; `observation` is the full span set.
+  listLatencyPercentiles?(kind: LatencyKind, opts?: LatencyOpts): Promise<LatencyRow[]>
 
   // getLogs?(filter, opts?): Promise<LogEntry[]>
   // getMetric?(name, range): Promise<MetricSeries>

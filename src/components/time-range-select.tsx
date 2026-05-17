@@ -13,7 +13,7 @@ export function TimeRangeSelect({ value, onChange, options = TIME_RANGE_DAYS }: 
     <Dropdown>
       <DropdownButton
         as="button"
-        className="inline-flex h-8 shrink-0 cursor-pointer items-center gap-1.5 rounded-md border border-zinc-950/10 bg-white px-2.5 text-sm/5 font-medium whitespace-nowrap text-zinc-950 shadow-xs transition-colors hover:bg-zinc-950/[0.03] focus:outline-hidden focus-visible:ring-2 focus-visible:ring-accent-500/80 disabled:cursor-not-allowed disabled:opacity-50 dark:border-white/10 dark:bg-white/[0.03] dark:text-zinc-100 dark:shadow-none dark:hover:bg-white/[0.07] dark:focus-visible:ring-accent-400/80"
+        className="inline-flex h-8 shrink-0 cursor-pointer items-center gap-1.5 rounded-md border border-zinc-950/10 bg-white px-2.5 text-sm/5 font-medium whitespace-nowrap text-zinc-950 shadow-xs transition-colors hover:bg-zinc-950/[0.03] focus:outline-hidden focus-visible:ring-2 focus-visible:ring-focus-500/80 disabled:cursor-not-allowed disabled:opacity-50 dark:border-white/10 dark:bg-white/[0.03] dark:text-zinc-100 dark:shadow-none dark:hover:bg-white/[0.07]"
       >
         <span className="font-mono text-xs tabular-nums">{timeRangeShortcut(value)}</span>
         <ChevronDownIcon data-slot="icon" className="size-4 fill-zinc-500 opacity-60 dark:fill-zinc-400" />

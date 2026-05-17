@@ -17,6 +17,10 @@ export type ConversationEvent =
       role: 'user' | 'assistant' | 'system'
       content: string
       spanId?: string
+      // Per-span emission order. Two distinct system/user messages in the same
+      // chat span's llm_input tail share (spanId, timestamp, role), so callers
+      // building React keys need this to disambiguate.
+      seq: number
       parentAgentSpanId?: string
       // Set on the assistant message produced by this turn's chat span — the
       // input/output token counts of the LLM call. Not set on historical
@@ -134,6 +138,7 @@ function emitChat(
       break
     }
   }
+  const seq = { n: 0 }
   for (let i = tailStart; i < inputMsgs.length; i++) {
     emitFromMessage(
       inputMsgs[i],
@@ -144,13 +149,25 @@ function emitChat(
       agentWrappedCallIds,
       realCallIds,
       parentAgentSpanId,
+      seq,
     )
   }
   // Tokens belong to the LLM call and attach only to its assistant output —
   // not to the user/system/tool input messages.
   const usage = { inputTokens: span.inputTokens, outputTokens: span.outputTokens }
   for (const msg of asMessages(span.llmOutput)) {
-    emitFromMessage(msg, span.endMs, span.id, events, seen, agentWrappedCallIds, realCallIds, parentAgentSpanId, usage)
+    emitFromMessage(
+      msg,
+      span.endMs,
+      span.id,
+      events,
+      seen,
+      agentWrappedCallIds,
+      realCallIds,
+      parentAgentSpanId,
+      seq,
+      usage,
+    )
   }
 }
 
@@ -163,6 +180,7 @@ function emitFromMessage(
   agentWrappedCallIds: Set<string>,
   realCallIds: Set<string>,
   parentAgentSpanId: string | undefined,
+  seq: { n: number },
   usage?: { inputTokens?: number; outputTokens?: number },
 ): void {
   for (const part of msg.parts) {
@@ -176,6 +194,7 @@ function emitFromMessage(
         role: msg.role,
         content: part.content,
         spanId,
+        seq: seq.n++,
       }
       if (parentAgentSpanId) event.parentAgentSpanId = parentAgentSpanId
       if (usage) {

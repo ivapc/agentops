@@ -2,22 +2,19 @@ import { ChatBubbleLeftRightIcon } from '@heroicons/react/20/solid'
 import { useQuery } from '@tanstack/react-query'
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { useMemo, useState } from 'react'
-import {
-  AUTO_REFRESH_MS,
-  type AutoRefreshInterval,
-  AutoRefreshSelect,
-  DEFAULT_AUTO_REFRESH_INTERVAL,
-} from '#/components/auto-refresh-select'
+import { AUTO_REFRESH_MS, AutoRefreshSelect, DEFAULT_AUTO_REFRESH_INTERVAL } from '#/components/auto-refresh-select'
 import { EmptyState } from '#/components/empty-state'
+import { EnvSelect } from '#/components/env-select'
 import { SearchInput } from '#/components/search-input'
-import { StatusPills } from '#/components/status-pills'
 import { TimeRangeSelect } from '#/components/time-range-select'
-import { TraceDrawer } from '#/components/trace-drawer'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '#/components/ui/table'
-import { formatAgo, formatCost, truncateId } from '#/lib/format'
+import { useEnv } from '#/hooks/use-env'
 import type { SessionSummary } from '#/lib/telemetry'
 import { parseTimeRangeDays, type TimeRangeDays } from '#/lib/time-range'
-import { sessionQuery, sessionsQuery } from './-data'
+import { SessionRow } from './-components/session-row'
+import { SessionsDrawerHost } from './-components/sessions-drawer-host'
+import { parseStatusFilter, type StatusFilter, StatusSelect } from './-components/status-select'
+import { sessionsQuery } from './-data'
 
 export const Route = createFileRoute('/sessions/')({
   validateSearch: (search: Record<string, unknown>): SessionsSearch => ({
@@ -30,49 +27,10 @@ export const Route = createFileRoute('/sessions/')({
   component: SessionsList,
 })
 
-type StatusFilter = 'all' | 'ok' | 'error'
 interface SessionsSearch {
   days: TimeRangeDays
   q?: string
   status?: Exclude<StatusFilter, 'all'>
-}
-
-const STATUS_OPTIONS: { value: StatusFilter; label: string }[] = [
-  { value: 'all', label: 'All' },
-  { value: 'ok', label: 'OK' },
-  { value: 'error', label: 'Error' },
-]
-
-function formatTokens(tokens: number | undefined): string {
-  if (!tokens) return '—'
-  if (tokens >= 1_000_000) return `${(tokens / 1_000_000).toFixed(1)}M`
-  if (tokens >= 10_000) return `${Math.round(tokens / 1000)}k`
-  if (tokens >= 1000) return `${(tokens / 1000).toFixed(1)}k`
-  return tokens.toLocaleString()
-}
-
-function parseStatusFilter(value: unknown): Exclude<StatusFilter, 'all'> | undefined {
-  return value === 'ok' || value === 'error' ? value : undefined
-}
-
-function metricTone(kind: 'cost' | 'tokens', value: number | undefined): string {
-  if (!value) return 'text-zinc-500 dark:text-zinc-400'
-  if (kind === 'cost') {
-    if (value >= 1) return 'text-rose-700 dark:text-rose-300'
-    if (value >= 0.1) return 'text-amber-700 dark:text-amber-300'
-  }
-  if (kind === 'tokens') {
-    if (value >= 100_000) return 'text-rose-700 dark:text-rose-300'
-    if (value >= 32_000) return 'text-amber-700 dark:text-amber-300'
-  }
-  return 'text-zinc-950 dark:text-white'
-}
-
-function userParts(s: SessionSummary): { primary: string; secondary?: string } {
-  if (s.userName) return { primary: s.userName, secondary: s.userId ?? s.host }
-  if (s.userId) return { primary: s.userId, secondary: s.host }
-  if (s.host) return { primary: s.host }
-  return { primary: '—' }
 }
 
 function SessionsList() {
@@ -91,7 +49,8 @@ function SessionsList() {
 
   const query = search.q ?? ''
   const status = search.status ?? 'all'
-  const [traceSessionId, setTraceSessionId] = useState<string | null>(null)
+  const [env, setEnv] = useEnv()
+  const [previewSessionId, setPreviewSessionId] = useState<string | null>(null)
 
   const setQuery = (nextQuery: string) => {
     navigate({
@@ -148,56 +107,56 @@ function SessionsList() {
             truncated
           </span>
         )}
-        {sessions.length > 0 && (
-          <div className="flex w-full min-w-0 flex-col gap-2 sm:ml-auto sm:w-auto sm:flex-row sm:items-center">
-            <SearchInput value={query} onChange={setQuery} placeholder="Search..." />
-            <div className="flex flex-wrap items-center gap-2">
-              <TimeRangeSelect value={search.days} onChange={setDays} />
-              <StatusPills value={status} onChange={setStatus} options={STATUS_OPTIONS} />
-              <AutoRefreshSelect
-                value={autoRefresh}
-                onChange={setAutoRefresh}
-                onRefresh={() => {
-                  void refetch()
-                }}
-                loading={isFetching}
-              />
-            </div>
+        <div className="flex w-full min-w-0 flex-col gap-2 sm:ml-auto sm:w-auto sm:flex-row sm:items-center">
+          <SearchInput value={query} onChange={setQuery} placeholder="Search agents, users, ids…" />
+          <div className="flex flex-wrap items-center gap-2">
+            <EnvSelect value={env} onChange={setEnv} />
+            <TimeRangeSelect value={search.days} onChange={setDays} />
+            <StatusSelect value={status} onChange={setStatus} />
+            <AutoRefreshSelect
+              value={autoRefresh}
+              onChange={setAutoRefresh}
+              onRefresh={() => {
+                void refetch()
+              }}
+              loading={isFetching}
+            />
           </div>
-        )}
+        </div>
       </header>
 
       {sessions.length === 0 ? (
-        <div className="overflow-hidden rounded-xl border border-zinc-950/5 bg-white dark:border-white/8 dark:bg-zinc-900">
-          <EmptyState
-            icon={ChatBubbleLeftRightIcon}
-            title="No sessions yet"
-            description={
-              <>
-                Emit{' '}
-                <code className="rounded bg-zinc-950/[0.06] px-1.5 py-0.5 font-mono text-[11px] text-zinc-800 dark:bg-white/[0.08] dark:text-zinc-200">
-                  session.id
-                </code>{' '}
-                on spans, or use{' '}
-                <code className="rounded bg-zinc-950/[0.06] px-1.5 py-0.5 font-mono text-[11px] text-zinc-800 dark:bg-white/[0.08] dark:text-zinc-200">
-                  invoke_agent Name(hex)
-                </code>{' '}
-                naming so rows can be derived.
-              </>
-            }
-          />
-        </div>
+        <EmptyState
+          icon={ChatBubbleLeftRightIcon}
+          title="No sessions yet"
+          description={
+            <>
+              Emit{' '}
+              <code className="rounded bg-zinc-950/[0.06] px-1.5 py-0.5 font-mono text-[11px] text-zinc-800 dark:bg-white/[0.08] dark:text-zinc-200">
+                session.id
+              </code>{' '}
+              on spans, or use{' '}
+              <code className="rounded bg-zinc-950/[0.06] px-1.5 py-0.5 font-mono text-[11px] text-zinc-800 dark:bg-white/[0.08] dark:text-zinc-200">
+                invoke_agent Name(hex)
+              </code>{' '}
+              naming so rows can be derived.
+            </>
+          }
+        />
       ) : (
-        <Table dense>
+        <Table
+          dense
+          className="-mx-3 lg:-mx-4 [&_table]:table-fixed [&_tbody_td:first-child]:pl-3 [&_tbody_td:last-child]:pr-3 [&_tbody_td]:border-b-zinc-950/10 [&_thead_th:first-child]:pl-3 [&_thead_th:last-child]:pr-3 dark:[&_tbody_td]:border-b-white/10 lg:[&_tbody_td:first-child]:pl-4 lg:[&_tbody_td:last-child]:pr-4 lg:[&_thead_th:first-child]:pl-4 lg:[&_thead_th:last-child]:pr-4"
+        >
           <TableHead>
             <TableRow>
-              <TableHeader>Session</TableHeader>
-              <TableHeader className="w-40">User</TableHeader>
-              <TableHeader className="w-28 text-right">Cost</TableHeader>
-              <TableHeader className="w-20 text-right">Turns</TableHeader>
-              <TableHeader className="w-24 text-right">Tokens</TableHeader>
-              <TableHeader className="w-44">Agent</TableHeader>
-              <TableHeader className="w-20">Status</TableHeader>
+              <TableHeader className="w-28">Last seen</TableHeader>
+              <TableHeader className="w-[14%]">Session</TableHeader>
+              <TableHeader>Input</TableHeader>
+              <TableHeader className="w-[14%]">User</TableHeader>
+              <TableHeader className="w-20 text-right">Tokens</TableHeader>
+              <TableHeader className="w-20 text-right">Cost</TableHeader>
+              <TableHeader className="w-14 text-right">Turns</TableHeader>
             </TableRow>
           </TableHead>
           <TableBody>
@@ -209,142 +168,18 @@ function SessionsList() {
               </TableRow>
             ) : (
               filtered.map((s) => (
-                <SessionRow key={s.sessionId} session={s} onOpenSession={() => setTraceSessionId(s.sessionId)} />
+                <SessionRow key={s.sessionId} session={s} onOpenSession={() => setPreviewSessionId(s.sessionId)} />
               ))
             )}
           </TableBody>
         </Table>
       )}
 
-      {traceSessionId && (
-        <TraceDrawerForSession sessionId={traceSessionId} days={search.days} onClose={() => setTraceSessionId(null)} />
-      )}
+      <SessionsDrawerHost
+        previewSessionId={previewSessionId}
+        days={search.days}
+        onClose={() => setPreviewSessionId(null)}
+      />
     </div>
-  )
-}
-
-function TraceDrawerForSession({
-  sessionId,
-  days,
-  onClose,
-}: {
-  sessionId: string
-  days: TimeRangeDays
-  onClose: () => void
-}) {
-  const [autoRefresh, setAutoRefresh] = useState<AutoRefreshInterval>(DEFAULT_AUTO_REFRESH_INTERVAL)
-  const { data, isLoading, isFetching, refetch } = useQuery({
-    ...sessionQuery(sessionId, days),
-    refetchInterval: AUTO_REFRESH_MS[autoRefresh],
-  })
-  return (
-    <TraceDrawer
-      open
-      onClose={onClose}
-      spans={data?.spans ?? []}
-      loading={isLoading}
-      title={truncateId(sessionId)}
-      expandSession={{ sessionId, days }}
-      autoRefresh={autoRefresh}
-      onAutoRefreshChange={setAutoRefresh}
-      onRefresh={() => {
-        void refetch()
-      }}
-      refreshing={isFetching}
-    />
-  )
-}
-
-function SessionRow({ session: s, onOpenSession }: { session: SessionSummary; onOpenSession: () => void }) {
-  const label = `Open session ${s.sessionId}`
-  const sessionTitle = s.title?.trim()
-  const title = sessionTitle || truncateId(s.sessionId)
-  const agentLabel = s.agents.length > 0 ? s.agents.join(', ') : '—'
-  const user = userParts(s)
-
-  return (
-    <TableRow
-      className="cursor-pointer transition-colors duration-150 hover:bg-accent-500/5 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-accent-500 dark:hover:bg-accent-400/8"
-      tabIndex={0}
-      title={label}
-      onClick={() => onOpenSession()}
-      onKeyDown={(e) => {
-        if (e.key === 'Enter' || e.key === ' ') {
-          e.preventDefault()
-          onOpenSession()
-        }
-      }}
-    >
-      <TableCell>
-        <div className="flex min-w-0 items-center gap-x-1.5 text-sm">
-          <span className="min-w-0 flex-1 truncate font-medium text-zinc-950 dark:text-white">{title}</span>
-          <span className="text-zinc-400 dark:text-zinc-500" aria-hidden>
-            ·
-          </span>
-          <time
-            dateTime={new Date(s.lastSeenMs).toISOString()}
-            className="shrink-0 whitespace-nowrap text-xs tabular-nums text-zinc-500 dark:text-zinc-400"
-            title={new Date(s.lastSeenMs).toLocaleString()}
-          >
-            {formatAgo(s.lastSeenMs)}
-          </time>
-          {sessionTitle ? (
-            <>
-              <span className="text-zinc-400 dark:text-zinc-500" aria-hidden>
-                ·
-              </span>
-              <span className="shrink-0 font-mono text-xs text-zinc-500 dark:text-zinc-400">
-                {truncateId(s.sessionId)}
-              </span>
-            </>
-          ) : null}
-        </div>
-      </TableCell>
-      <TableCell>
-        <div className="flex min-w-0 items-center gap-x-1.5 text-sm">
-          <span className="min-w-0 flex-1 truncate text-zinc-950 dark:text-white">{user.primary}</span>
-          {user.secondary ? (
-            <>
-              <span className="shrink-0 text-zinc-400 dark:text-zinc-500" aria-hidden>
-                ·
-              </span>
-              <span className="max-w-[min(12rem,40vw)] shrink-0 truncate text-xs text-zinc-500 dark:text-zinc-400">
-                {user.secondary}
-              </span>
-            </>
-          ) : null}
-        </div>
-      </TableCell>
-      <TableCell className={`text-right font-medium tabular-nums ${metricTone('cost', s.totalCostUsd)}`}>
-        {formatCost(s.totalCostUsd ?? 0)}
-      </TableCell>
-      <TableCell className="text-right tabular-nums text-zinc-500 dark:text-zinc-400">{s.traceCount}</TableCell>
-      <TableCell className={`text-right font-medium tabular-nums ${metricTone('tokens', s.totalTokens)}`}>
-        {formatTokens(s.totalTokens)}
-      </TableCell>
-      <TableCell>
-        <div className="flex min-w-0 items-center gap-2">
-          <span className="truncate font-medium text-accent-600 dark:text-accent-400">{agentLabel}</span>
-          {s.source === 'agent-instance' && (
-            <span
-              title="Derived from agent-instance hex in span names (no session.id attribute)"
-              className="shrink-0 rounded bg-amber-500/10 px-1.5 py-0.5 font-mono text-[10px] text-amber-700 dark:text-amber-300"
-            >
-              heuristic
-            </span>
-          )}
-        </div>
-      </TableCell>
-      <TableCell>
-        {s.hasError ? (
-          <span className="inline-flex items-center gap-1.5 font-medium text-rose-700 dark:text-rose-300">
-            <span className="size-1.5 rounded-full bg-rose-500" />
-            Error
-          </span>
-        ) : (
-          <span className="text-zinc-500 dark:text-zinc-400">OK</span>
-        )}
-      </TableCell>
-    </TableRow>
   )
 }

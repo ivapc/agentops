@@ -4,16 +4,16 @@ import { queryKeys, STALE_LIVE_MS } from '#/lib/query-keys'
 import type { Span } from '#/lib/spans'
 import { getTrace } from '#/lib/telemetry'
 
-const fetchTrace = createServerFn({ method: 'GET' })
+const fetchRunSpans = createServerFn({ method: 'GET' })
   .inputValidator((traceId: string) => traceId)
   .handler(async ({ data }) => {
     return await getTrace(data)
   })
 
-export const traceQuery = (id: string) =>
+export const runSpansQuery = (runIdOrTraceId: string) =>
   queryOptions({
-    queryKey: queryKeys.traces.detail(id),
-    queryFn: () => fetchTrace({ data: id }),
+    queryKey: queryKeys.runs.detail(runIdOrTraceId),
+    queryFn: () => fetchRunSpans({ data: runIdOrTraceId }),
     staleTime: STALE_LIVE_MS,
   })
 

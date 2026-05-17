@@ -1,8 +1,6 @@
 import {
   ArrowRightStartOnRectangleIcon,
-  ChevronDownIcon,
   ChevronUpIcon,
-  Cog8ToothIcon,
   MoonIcon,
   SunIcon,
   UserCircleIcon,
@@ -15,7 +13,7 @@ import {
   InboxIcon,
   PlayCircleIcon,
   PuzzlePieceIcon,
-} from '@heroicons/react/20/solid'
+} from '@heroicons/react/24/outline'
 import { useQuery } from '@tanstack/react-query'
 import { useRouterState } from '@tanstack/react-router'
 import { useState } from 'react'
@@ -44,15 +42,12 @@ import {
 } from '#/components/ui/sidebar'
 import { SidebarLayout } from '#/components/ui/sidebar-layout'
 import { useTheme } from '#/hooks/use-theme'
-import { useUser } from '#/hooks/use-user'
+import { useUser, useUserId } from '#/hooks/use-user'
+import { truncateId } from '#/lib/format'
 import { inboxUnreadCountQuery } from '#/routes/inbox/-data'
+import { currentUserSessionsQuery } from '#/routes/sessions/-data'
 
 const APP_VERSION = 'v0.1.0'
-
-const recentRuns = [
-  { id: '1', name: 'code-review · #4821', url: '/sessions/4821' },
-  { id: '2', name: 'lead-qualifier · #182', url: '/sessions/182' },
-]
 
 function AccountDropdownMenu({ anchor }: { anchor: 'top start' | 'bottom end' }) {
   const { mode, toggle } = useTheme()
@@ -81,13 +76,18 @@ export function ApplicationLayout({ children }: { children: React.ReactNode }) {
   const pathname = useRouterState({ select: (s) => s.location.pathname })
   const is = (path: string) => pathname.startsWith(path)
   const user = useUser()
+  const [userId] = useUserId()
   const [settingsOpen, setSettingsOpen] = useState(false)
   const { data: unreadCount = 0 } = useQuery(inboxUnreadCountQuery())
+  const { data: sessionsData } = useQuery(currentUserSessionsQuery(7, userId))
+  const flush = /^\/sessions\/[^/]+/.test(pathname)
+  const recentSessions = (sessionsData?.sessions ?? []).slice(0, 5)
 
   return (
     <>
       <SettingsDialog open={settingsOpen} onClose={setSettingsOpen} />
       <SidebarLayout
+        flush={flush}
         navbar={
           <Navbar>
             <NavbarSpacer />
@@ -104,27 +104,13 @@ export function ApplicationLayout({ children }: { children: React.ReactNode }) {
         sidebar={
           <Sidebar>
             <SidebarHeader>
-              <Dropdown>
-                <DropdownButton as={SidebarItem}>
-                  <Logo />
-                  <SidebarLabel>agentops</SidebarLabel>
-                  <span className="rounded-md bg-zinc-100 px-1.5 py-0.5 font-mono text-[10px]/4 font-medium text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400">
-                    {APP_VERSION}
-                  </span>
-                  <ChevronDownIcon />
-                </DropdownButton>
-                <DropdownMenu className="min-w-80 lg:min-w-64" anchor="bottom start">
-                  <DropdownItem onClick={() => setSettingsOpen(true)}>
-                    <Cog8ToothIcon />
-                    <DropdownLabel>Settings</DropdownLabel>
-                  </DropdownItem>
-                  <DropdownDivider />
-                  <DropdownItem href="/workspace">
-                    <Logo slot="icon" />
-                    <DropdownLabel>agentops</DropdownLabel>
-                  </DropdownItem>
-                </DropdownMenu>
-              </Dropdown>
+              <div className="flex items-center gap-2 px-2.5 py-1.5 text-sm/5 font-medium text-zinc-950 dark:text-white">
+                <Logo className="!size-5" />
+                <SidebarLabel>agentops</SidebarLabel>
+                <span className="rounded-md bg-zinc-100 px-1.5 py-0.5 font-mono text-[10px]/4 font-medium text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400">
+                  {APP_VERSION}
+                </span>
+              </div>
             </SidebarHeader>
 
             <SidebarBody>
@@ -137,9 +123,9 @@ export function ApplicationLayout({ children }: { children: React.ReactNode }) {
                   <ChatBubbleLeftRightIcon />
                   <SidebarLabel>Sessions</SidebarLabel>
                 </SidebarItem>
-                <SidebarItem href="/live" current={is('/live')}>
+                <SidebarItem href="/runs" current={is('/runs') || is('/live')}>
                   <PlayCircleIcon />
-                  <SidebarLabel>Live</SidebarLabel>
+                  <SidebarLabel>Runs</SidebarLabel>
                 </SidebarItem>
                 <SidebarItem href="/mcp" current={is('/mcp')}>
                   <PuzzlePieceIcon />
@@ -151,14 +137,16 @@ export function ApplicationLayout({ children }: { children: React.ReactNode }) {
                 </SidebarItem>
               </SidebarSection>
 
-              <SidebarSection className="max-lg:hidden">
-                <SidebarHeading>Recent</SidebarHeading>
-                {recentRuns.map((run) => (
-                  <SidebarItem key={run.id} href={run.url}>
-                    {run.name}
-                  </SidebarItem>
-                ))}
-              </SidebarSection>
+              {recentSessions.length > 0 && (
+                <SidebarSection className="gap-0! max-lg:hidden">
+                  <SidebarHeading>Recent</SidebarHeading>
+                  {recentSessions.map((session) => (
+                    <SidebarItem key={session.sessionId} href={`/sessions/${session.sessionId}`}>
+                      {session.title?.trim() || session.firstInput?.trim() || truncateId(session.sessionId)}
+                    </SidebarItem>
+                  ))}
+                </SidebarSection>
+              )}
 
               <SidebarSpacer />
 
@@ -186,14 +174,14 @@ export function ApplicationLayout({ children }: { children: React.ReactNode }) {
 
             <SidebarFooter className="max-lg:hidden">
               <Dropdown>
-                <DropdownButton as={SidebarItem}>
-                  <span className="flex min-w-0 items-center gap-3">
-                    <Avatar initials={user.initials} className="size-10 bg-zinc-900 text-white" square />
+                <DropdownButton as={SidebarItem} className="py-1! sm:py-1!">
+                  <span className="flex min-w-0 items-center gap-2.5">
+                    <Avatar initials={user.initials} className="size-8 bg-zinc-900 text-white" square />
                     <span className="min-w-0">
                       <span className="block truncate text-sm/5 font-medium text-zinc-950 dark:text-white">
                         {user.name}
                       </span>
-                      <span className="block truncate text-xs/5 font-normal text-zinc-500 dark:text-zinc-400">
+                      <span className="block truncate text-xs/4 font-normal text-zinc-500 dark:text-zinc-400">
                         {user.email}
                       </span>
                     </span>

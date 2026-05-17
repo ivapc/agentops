@@ -62,7 +62,7 @@ function InboxPage() {
                       item.sessionId
                         ? `/sessions/${item.sessionId}`
                         : item.traceId
-                          ? `/live/${item.traceId}`
+                          ? `/runs/${item.traceId}`
                           : '/sessions'
                     }
                   />

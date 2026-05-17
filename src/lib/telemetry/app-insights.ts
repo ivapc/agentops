@@ -6,12 +6,15 @@ import {
   USER_ID_ATTR_KEYS,
   USER_NAME_ATTR_KEYS,
 } from '#/lib/classify-span'
-import { propagateSessionInTrace, type Span, type SpanKind } from '#/lib/spans'
-import { aggregateSessions } from './openobserve'
+import { normalizeTraceRoots, propagateSessionInTrace, type Span, type SpanKind } from '#/lib/spans'
+import { aggregateSessions, mapLatencyRow, pickIdentityValue } from './shared'
 import type {
   GetTraceOpts,
   InventoryDiscoveryKind,
   InventoryObservation,
+  LatencyKind,
+  LatencyOpts,
+  LatencyRow,
   ListSessionsOpts,
   ListTracesOpts,
   SessionFetch,
@@ -93,6 +96,7 @@ export function createAppInsightsProvider(cfg: AppInsightsConfig): TelemetryProv
       const rows = await kql(q, timespanFromOpts(opts))
       if (rows.length === 0) return { kind: 'not_found' }
       const spans = rows.map((r) => normalizeAiRow(r, traceId))
+      normalizeTraceRoots(spans)
       propagateSessionInTrace(spans)
       return { kind: 'found', spans, truncated: rows.length >= SESSION_SCAN_LIMIT }
     },
@@ -125,10 +129,12 @@ export function createAppInsightsProvider(cfg: AppInsightsConfig): TelemetryProv
     },
 
     async listSessions(opts) {
+      const userFilter = kqlIdentityFilter(opts)
       const q = `
         union dependencies, requests
         | extend gen_op = tostring(customDimensions["gen_ai.operation.name"])
         | where isnotempty(gen_op) or name startswith "invoke_agent "
+        ${userFilter ? `| where ${userFilter}` : ''}
         | project
             trace_id = operation_Id,
             span_id = id,
@@ -159,10 +165,12 @@ export function createAppInsightsProvider(cfg: AppInsightsConfig): TelemetryProv
       if (!isSafeId(sessionId)) return { kind: 'not_found' }
       const isHex = /^[a-f0-9]+$/i.test(sessionId)
       const hexClause = isHex ? `or name matches regex "^invoke_agent\\\\s+.*\\\\(${sessionId}\\\\)"` : ''
+      const userFilter = kqlIdentityFilter(opts)
       const tracesQ = `
         union dependencies, requests
         | extend sess = ${SESSION_ID_COALESCE}
         | where sess == "${sessionId}" ${hexClause}
+        ${userFilter ? `| where ${userFilter}` : ''}
         | distinct operation_Id
       `
       const traceRows = await kql(tracesQ, timespanFromOpts(opts))
@@ -185,7 +193,10 @@ export function createAppInsightsProvider(cfg: AppInsightsConfig): TelemetryProv
         arr.push(s)
         byTrace.set(s.traceId, arr)
       }
-      for (const trSpans of byTrace.values()) propagateSessionInTrace(trSpans)
+      for (const trSpans of byTrace.values()) {
+        normalizeTraceRoots(trSpans)
+        propagateSessionInTrace(trSpans)
+      }
 
       const source: 'attribute' | 'agent-instance' = spans.some((s) => s.sessionSource === 'attribute')
         ? 'attribute'
@@ -207,6 +218,26 @@ export function createAppInsightsProvider(cfg: AppInsightsConfig): TelemetryProv
       `
       const rows = await kql(q, timespanFromOpts(opts))
       return rows.flatMap((r) => rowToInventoryObservation(kind, r))
+    },
+
+    async listLatencyPercentiles(kind: LatencyKind, opts?: LatencyOpts): Promise<LatencyRow[]> {
+      const limit = opts?.limit ?? 5
+      const filter =
+        kind === 'generation' ? `| where tostring(customDimensions["gen_ai.operation.name"]) == "chat"` : ''
+      const q = `
+        union dependencies, requests
+        ${filter}
+        | summarize
+            p50_ms = percentile(duration, 50),
+            p90_ms = percentile(duration, 90),
+            p95_ms = percentile(duration, 95),
+            p99_ms = percentile(duration, 99),
+            count = count()
+          by name
+        | top ${limit} by p95_ms desc
+      `
+      const rows = await kql(q, timespanFromOpts(opts))
+      return rows.map(mapLatencyRow)
     },
   }
 }
@@ -314,6 +345,17 @@ function rowToInventoryObservation(kind: InventoryDiscoveryKind, row: Record<str
       traceId: typeof row.sample_trace_id === 'string' ? row.sample_trace_id : undefined,
     },
   ]
+}
+
+function kqlIdentityFilter(opts: GetTraceOpts | ListSessionsOpts | undefined): string | undefined {
+  const id = pickIdentityValue(opts)
+  if (!id) return undefined
+  const coalesce = id.kind === 'id' ? USER_ID_COALESCE : USER_NAME_COALESCE
+  return `${coalesce} == ${kqlString(id.value)}`
+}
+
+function kqlString(value: string): string {
+  return JSON.stringify(value)
 }
 
 function num(v: unknown): number | undefined {

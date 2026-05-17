@@ -6,6 +6,9 @@ import type {
   GetTraceOpts,
   InventoryDiscoveryKind,
   InventoryObservation,
+  LatencyKind,
+  LatencyOpts,
+  LatencyRow,
   ListSessionsOpts,
   ListTracesOpts,
   SessionSummary,
@@ -17,6 +20,9 @@ export type {
   GetTraceOpts,
   InventoryDiscoveryKind,
   InventoryObservation,
+  LatencyKind,
+  LatencyOpts,
+  LatencyRow,
   ListSessionsOpts,
   ListTracesOpts,
   SessionFetch,
@@ -180,4 +186,10 @@ export async function discoverInventory(
   const p = getActiveProvider()
   if (!p.discoverInventory) return []
   return await p.discoverInventory(kind, opts)
+}
+
+export async function listLatencyPercentiles(kind: LatencyKind, opts?: LatencyOpts): Promise<LatencyRow[]> {
+  const p = getActiveProvider()
+  if (!p.listLatencyPercentiles) return []
+  return await p.listLatencyPercentiles(kind, opts)
 }

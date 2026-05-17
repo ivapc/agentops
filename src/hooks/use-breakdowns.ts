@@ -2,7 +2,11 @@ import { useQuery } from '@tanstack/react-query'
 import type { Span } from '#/lib/spans'
 import { type ChatBreakdown, emptyBreakdown, fetchBreakdowns, sumBreakdowns } from '#/lib/tokens'
 
-export function useBreakdowns(chatSpans: Span[]): { ready: boolean; total: ChatBreakdown } {
+export function useBreakdowns(
+  chatSpans: Span[],
+  options: { enabled?: boolean } = {},
+): { ready: boolean; total: ChatBreakdown } {
+  const enabled = options.enabled ?? true
   const ids = chatSpans.map((s) => s.id).join(',')
 
   const { data, isPending } = useQuery({
@@ -18,7 +22,7 @@ export function useBreakdowns(chatSpans: Span[]): { ready: boolean; total: ChatB
           toolDefinitions,
         })),
       }),
-    enabled: chatSpans.length > 0,
+    enabled: enabled && chatSpans.length > 0,
     staleTime: Infinity,
   })
 
