@@ -1,34 +1,169 @@
-import { CheckIcon, ChevronDownIcon } from '@heroicons/react/16/solid'
-import { Dropdown, DropdownButton, DropdownItem, DropdownLabel, DropdownMenu } from '#/components/ui/dropdown'
-import { TIME_RANGE_DAYS, type TimeRangeDays, timeRangeLabel, timeRangeShortcut } from '#/lib/time-range'
+import { ArrowLeft01Icon, UnfoldMoreIcon } from '@hugeicons/core-free-icons'
+import { HugeiconsIcon } from '@hugeicons/react'
+import { useEffect, useState } from 'react'
+import type { DateRange } from 'react-day-picker'
+import { Button } from '#/components/ui/button'
+import { Calendar } from '#/components/ui/calendar'
+import { Popover, PopoverContent, PopoverTrigger } from '#/components/ui/popover'
+import { Separator } from '#/components/ui/separator'
+import { label, PRESETS, shortcut, type TimeRange } from '#/lib/time-range'
+import { cn } from '#/lib/utils'
 
 interface TimeRangeSelectProps {
-  value: TimeRangeDays
-  onChange: (value: TimeRangeDays) => void
-  options?: readonly TimeRangeDays[]
+  value: TimeRange
+  onChange: (value: TimeRange) => void
+  options?: readonly number[]
 }
 
-export function TimeRangeSelect({ value, onChange, options = TIME_RANGE_DAYS }: TimeRangeSelectProps) {
+type View = 'presets' | 'custom'
+
+export function TimeRangeSelect({ value, onChange, options = PRESETS }: TimeRangeSelectProps) {
+  const [open, setOpen] = useState(false)
+  const isCustom = typeof value !== 'number'
+  const [view, setView] = useState<View>(isCustom ? 'custom' : 'presets')
+  const [selected, setSelected] = useState<DateRange | undefined>(
+    isCustom ? { from: new Date(value.from), to: new Date(value.to) } : undefined,
+  )
+
+  useEffect(() => {
+    if (!open) return
+    setView(isCustom ? 'custom' : 'presets')
+    setSelected(isCustom ? { from: new Date(value.from), to: new Date(value.to) } : undefined)
+  }, [open, value, isCustom])
+
+  const handlePreset = (days: number) => {
+    onChange(days)
+    setOpen(false)
+  }
+
+  const handleApply = () => {
+    if (!selected?.from) return
+    const fromMs = startOfDay(selected.from).getTime()
+    // Single-date selection means "from that day to now"; full range means absolute window.
+    const sameDay = selected.to && startOfDay(selected.to).getTime() === fromMs
+    const toMs = !selected.to || sameDay ? Date.now() : endOfDay(selected.to).getTime()
+    onChange({ from: fromMs, to: toMs })
+    setOpen(false)
+  }
+
+  const canApply = !!selected?.from
+
   return (
-    <Dropdown>
-      <DropdownButton
-        as="button"
-        className="inline-flex h-8 shrink-0 cursor-pointer items-center gap-1.5 rounded-md border border-zinc-950/10 bg-white px-2.5 text-sm/5 font-medium whitespace-nowrap text-zinc-950 shadow-xs transition-colors hover:bg-zinc-950/[0.03] focus:outline-hidden focus-visible:ring-2 focus-visible:ring-focus-500/80 disabled:cursor-not-allowed disabled:opacity-50 dark:border-white/10 dark:bg-white/[0.03] dark:text-zinc-100 dark:shadow-none dark:hover:bg-white/[0.07]"
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          aria-label="Time range"
+          data-slot="select-trigger"
+          data-size="sm"
+          data-state={open ? 'open' : 'closed'}
+          className={cn(
+            // verbatim SelectTrigger classes (radix-mira preset):
+            "flex w-fit items-center justify-between gap-1.5 rounded-md border bg-input/20 px-2 py-1.5 text-xs/relaxed whitespace-nowrap transition-colors outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/30 disabled:cursor-not-allowed disabled:opacity-50 data-[size=default]:h-7 data-[size=sm]:h-6 dark:bg-input/30 dark:hover:bg-input/50 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-3.5",
+            // sibling overrides (match EnvSelect / AutoRefreshSelect):
+            'border-border bg-transparent',
+            // open state, matches focus-visible look:
+            'data-[state=open]:border-ring data-[state=open]:ring-2 data-[state=open]:ring-ring/30',
+          )}
+        >
+          <span className="text-muted-foreground">Range</span>
+          <Separator orientation="vertical" className="data-[orientation=vertical]:h-3.5" />
+          <span className="tabular-nums">{shortcut(value)}</span>
+          <HugeiconsIcon
+            icon={UnfoldMoreIcon}
+            strokeWidth={2}
+            className="pointer-events-none size-3.5 text-muted-foreground"
+          />
+        </button>
+      </PopoverTrigger>
+      <PopoverContent
+        align="end"
+        sideOffset={4}
+        className="w-auto rounded-lg p-0 text-popover-foreground shadow-md ring-1 ring-foreground/10"
       >
-        <span className="font-mono text-xs tabular-nums">{timeRangeShortcut(value)}</span>
-        <ChevronDownIcon data-slot="icon" className="size-4 fill-zinc-500 opacity-60 dark:fill-zinc-400" />
-      </DropdownButton>
-      <DropdownMenu anchor="bottom end" className="min-w-44">
-        {options.map((days) => (
-          <DropdownItem key={days} onClick={() => onChange(days)} className={controlMenuItemClass}>
-            {value === days ? <CheckIcon data-slot="icon" /> : <span data-slot="icon" />}
-            <DropdownLabel>{timeRangeLabel(days)}</DropdownLabel>
-          </DropdownItem>
-        ))}
-      </DropdownMenu>
-    </Dropdown>
+        {view === 'presets' ? (
+          <div className="flex w-44 flex-col p-1">
+            {options.map((days) => {
+              const isActive = value === days
+              return (
+                <button
+                  key={days}
+                  type="button"
+                  onClick={() => handlePreset(days)}
+                  className={cn(
+                    'flex h-7 items-center rounded-sm px-2 text-left text-xs/relaxed',
+                    isActive ? 'bg-accent text-accent-foreground' : 'hover:bg-accent hover:text-accent-foreground',
+                  )}
+                >
+                  {label(days)}
+                </button>
+              )
+            })}
+            <Separator className="my-1" />
+            <button
+              type="button"
+              onClick={() => setView('custom')}
+              className={cn(
+                'flex h-7 items-center rounded-sm px-2 text-left text-xs/relaxed',
+                isCustom ? 'bg-accent text-accent-foreground' : 'hover:bg-accent hover:text-accent-foreground',
+              )}
+            >
+              Custom range…
+            </button>
+          </div>
+        ) : (
+          <div className="flex flex-col">
+            <div className="flex items-center gap-1 border-b p-1.5">
+              <Button variant="ghost" size="icon-sm" aria-label="Back to presets" onClick={() => setView('presets')}>
+                <HugeiconsIcon icon={ArrowLeft01Icon} strokeWidth={2} className="size-3.5" />
+              </Button>
+              <span className="text-xs font-medium">Custom range</span>
+            </div>
+            <Calendar
+              mode="range"
+              numberOfMonths={1}
+              selected={selected}
+              onSelect={setSelected}
+              defaultMonth={selected?.from ?? new Date()}
+            />
+            <div className="flex items-center justify-between gap-2 border-t p-2">
+              <span className="px-1 text-xs text-muted-foreground">{previewLabel(selected)}</span>
+              <div className="flex gap-2">
+                <Button variant="ghost" size="sm" onClick={() => setOpen(false)}>
+                  Cancel
+                </Button>
+                <Button size="sm" disabled={!canApply} onClick={handleApply}>
+                  Apply
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
+      </PopoverContent>
+    </Popover>
   )
 }
 
-const controlMenuItemClass =
-  '!cursor-pointer data-focus:!bg-zinc-100 data-focus:!text-zinc-950 dark:data-focus:!bg-white/10 dark:data-focus:!text-white dark:data-focus:*:data-[slot=icon]:!text-zinc-300'
+function previewLabel(selected: DateRange | undefined): string {
+  if (!selected?.from) return 'Pick a date'
+  const from = fmt(selected.from)
+  const sameDay = selected.to && startOfDay(selected.to).getTime() === startOfDay(selected.from).getTime()
+  if (!selected.to || sameDay) return `${from} – now`
+  return `${from} – ${fmt(selected.to)}`
+}
+
+function fmt(d: Date): string {
+  return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+}
+
+function startOfDay(date: Date): Date {
+  const d = new Date(date)
+  d.setHours(0, 0, 0, 0)
+  return d
+}
+
+function endOfDay(date: Date): Date {
+  const d = new Date(date)
+  d.setHours(23, 59, 59, 999)
+  return d
+}

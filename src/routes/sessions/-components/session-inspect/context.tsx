@@ -1,4 +1,6 @@
 import { type ReactNode, useMemo, useState } from 'react'
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '#/components/ui/accordion'
+import { ScrollArea } from '#/components/ui/scroll-area'
 import { asMessages } from '#/lib/conversation'
 import { estimateTokens } from '#/lib/format'
 import { formatJson, type JsonValue } from '#/lib/json'
@@ -333,8 +335,8 @@ export function SessionContextView({ spans }: { spans: Span[] }) {
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="shrink-0 border-zinc-950/10 border-b px-4 pt-2 dark:border-white/10">
-        <div className="text-xs font-semibold text-zinc-950 dark:text-white">Context</div>
+      <div className="shrink-0 border-border border-b px-4 pt-2">
+        <div className="text-xs font-semibold text-foreground">Context</div>
         <nav className="mt-1 flex gap-4" aria-label="Session context">
           {(
             [
@@ -349,8 +351,8 @@ export function SessionContextView({ spans }: { spans: Span[] }) {
               className={[
                 'flex h-7 items-center border-b-2 px-0 text-xs font-medium transition-colors',
                 tab === id
-                  ? 'border-zinc-950 text-zinc-950 dark:border-white dark:text-white'
-                  : 'border-transparent text-zinc-500 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-white',
+                  ? 'border-foreground text-foreground'
+                  : 'border-transparent text-muted-foreground hover:text-foreground',
               ].join(' ')}
             >
               {label}
@@ -359,13 +361,15 @@ export function SessionContextView({ spans }: { spans: Span[] }) {
         </nav>
       </div>
 
-      <div className="min-h-0 flex-1 overflow-auto px-4 py-4">
-        {tab === 'system' ? (
-          <ContextSystem blocks={systemBlocks} />
-        ) : (
-          <ContextAgui items={aguiItems} frontendTools={frontendTools} />
-        )}
-      </div>
+      <ScrollArea className="min-h-0 flex-1">
+        <div className="px-4 py-4">
+          {tab === 'system' ? (
+            <ContextSystem blocks={systemBlocks} />
+          ) : (
+            <ContextAgui items={aguiItems} frontendTools={frontendTools} />
+          )}
+        </div>
+      </ScrollArea>
     </div>
   )
 }
@@ -373,55 +377,59 @@ export function SessionContextView({ spans }: { spans: Span[] }) {
 export function ContextSystem({ blocks }: { blocks: SystemBlock[] }) {
   if (blocks.length === 0) return <ContextEmpty>No system prompt found in chat span inputs.</ContextEmpty>
   return (
-    <div className="space-y-3">
-      {blocks.map((block, index) => (
-        <details
-          key={block.id}
-          open={index === 0}
-          className="rounded-lg bg-zinc-950/[0.025] ring-1 ring-zinc-950/10 dark:bg-white/[0.03] dark:ring-white/10"
-        >
-          <summary className="cursor-pointer px-3 py-2 text-xs font-medium text-zinc-900 dark:text-zinc-100">
-            <span>{block.title}</span>
-            <span className="ml-2 text-zinc-500 dark:text-zinc-400">{block.tokens.toLocaleString()} est. tokens</span>
-          </summary>
-          <pre className="max-h-[28rem] overflow-auto whitespace-pre-wrap break-words border-zinc-950/10 border-t px-3 py-2 text-[11px] leading-relaxed text-zinc-800 dark:border-white/10 dark:text-zinc-200">
-            {block.content}
-          </pre>
-        </details>
+    <Accordion type="multiple" defaultValue={blocks.length > 0 ? [blocks[0].id] : []}>
+      {blocks.map((block) => (
+        <AccordionItem key={block.id} value={block.id}>
+          <AccordionTrigger>
+            <span className="min-w-0 flex-1 truncate">{block.title}</span>
+            <span className="text-muted-foreground">{block.tokens.toLocaleString()} est. tokens</span>
+          </AccordionTrigger>
+          <AccordionContent>
+            <pre className="max-h-[28rem] overflow-auto whitespace-pre-wrap break-words text-[11px] leading-relaxed text-foreground">
+              {block.content}
+            </pre>
+          </AccordionContent>
+        </AccordionItem>
       ))}
-    </div>
+    </Accordion>
   )
 }
 
 export function ContextTools({ groups }: { groups: ToolGroup[] }) {
   if (groups.length === 0) return <ContextEmpty>No tool definitions found in chat span inputs.</ContextEmpty>
   // Wrapped: frontend + per-server (named, meaningful). Flat: the catch-all
-  // bucket renders as bare rows — no fake group header.
+  // bucket — no fake group header since the parent tab is already "Tools",
+  // but shares the same muted-tint surface as an open Accordion item.
   const wrapped = groups.filter((g) => g.kind !== 'default')
   const flat = groups.find((g) => g.kind === 'default')?.tools ?? []
   return (
     <div className="space-y-3">
-      {wrapped.map((group) => (
-        <details
-          key={`${group.kind}:${group.domain}`}
-          open={group.kind === 'frontend'}
-          className="rounded-lg bg-zinc-950/[0.025] ring-1 ring-zinc-950/10 dark:bg-white/[0.03] dark:ring-white/10"
-        >
-          <summary className="cursor-pointer px-3 py-2 text-xs font-medium text-zinc-900 dark:text-zinc-100">
-            <span>{group.domain}</span>
-            <span className="ml-2 text-zinc-500 dark:text-zinc-400">
-              {group.tools.length} tools · {group.tokens.toLocaleString()} est. tokens
-            </span>
-          </summary>
-          <div className="divide-y divide-zinc-950/10 border-zinc-950/10 border-t dark:divide-white/10 dark:border-white/10">
-            {group.tools.map((tool) => (
-              <ToolRow key={tool.id} tool={tool} />
-            ))}
-          </div>
-        </details>
-      ))}
+      {wrapped.length > 0 && (
+        <Accordion type="multiple">
+          {wrapped.map((group) => {
+            const value = `${group.kind}:${group.domain}`
+            return (
+              <AccordionItem key={value} value={value}>
+                <AccordionTrigger>
+                  <span className="min-w-0 flex-1 truncate">{group.domain}</span>
+                  <span className="text-muted-foreground">
+                    {group.tools.length} tools · {group.tokens.toLocaleString()} est. tokens
+                  </span>
+                </AccordionTrigger>
+                <AccordionContent className="px-0">
+                  <div className="divide-y divide-border border-border border-t">
+                    {group.tools.map((tool) => (
+                      <ToolRow key={tool.id} tool={tool} />
+                    ))}
+                  </div>
+                </AccordionContent>
+              </AccordionItem>
+            )
+          })}
+        </Accordion>
+      )}
       {flat.length > 0 && (
-        <div className="divide-y divide-zinc-950/10 overflow-hidden rounded-lg ring-1 ring-zinc-950/10 dark:divide-white/10 dark:ring-white/10">
+        <div className="divide-y divide-border overflow-hidden rounded-md border bg-muted/50">
           {flat.map((tool) => (
             <ToolRow key={tool.id} tool={tool} />
           ))}
@@ -436,14 +444,12 @@ function ToolRow({ tool }: { tool: ToolDef }) {
     <details className="group">
       <summary className="grid cursor-pointer grid-cols-[minmax(0,1fr)_auto] gap-3 px-3 py-2 text-xs">
         <span className="min-w-0">
-          <span className="block truncate font-medium text-zinc-900 dark:text-zinc-100">{tool.name}</span>
-          {tool.description && (
-            <span className="mt-0.5 block truncate text-zinc-500 dark:text-zinc-400">{tool.description}</span>
-          )}
+          <span className="block truncate font-medium text-foreground">{tool.name}</span>
+          {tool.description && <span className="mt-0.5 block truncate text-muted-foreground">{tool.description}</span>}
         </span>
-        <span className="tabular-nums text-zinc-500 dark:text-zinc-400">{tool.tokens.toLocaleString()} tok</span>
+        <span className="tabular-nums text-muted-foreground">{tool.tokens.toLocaleString()} tok</span>
       </summary>
-      <pre className="max-h-80 overflow-auto whitespace-pre-wrap break-words bg-white/70 px-3 py-2 text-[11px] leading-snug text-zinc-800 dark:bg-zinc-950/30 dark:text-zinc-200">
+      <pre className="max-h-80 overflow-auto whitespace-pre-wrap break-words bg-card/70 px-3 py-2 text-[11px] leading-snug text-foreground">
         {formatJson(tool.raw)}
       </pre>
     </details>
@@ -465,17 +471,17 @@ function ContextAgui({ items, frontendTools }: { items: AguiItem[]; frontendTool
       {frontendTools.length > 0 && <FrontendToolsSection tools={frontendTools} />}
 
       {identifiers.length > 0 && (
-        <dl className="overflow-hidden rounded-lg ring-1 ring-zinc-950/10 dark:ring-white/10">
+        <dl className="overflow-hidden rounded-lg ring-1 ring-border">
           {identifiers.map((item, i) => (
             <div
               key={item.id}
               className={[
                 'grid grid-cols-[max-content_minmax(0,1fr)] items-center gap-4 px-3 py-1.5 text-xs',
-                i > 0 ? 'border-zinc-950/5 border-t dark:border-white/5' : '',
+                i > 0 ? 'border-border border-t' : '',
               ].join(' ')}
             >
-              <dt className="text-zinc-500 dark:text-zinc-400">{item.label}</dt>
-              <dd className="truncate font-mono text-zinc-900 dark:text-zinc-100" title={item.value}>
+              <dt className="text-muted-foreground">{item.label}</dt>
+              <dd className="truncate font-mono text-foreground" title={item.value}>
                 {item.value}
               </dd>
             </div>
@@ -484,24 +490,21 @@ function ContextAgui({ items, frontendTools }: { items: AguiItem[]; frontendTool
       )}
 
       {payloads.length > 0 && (
-        <div className="space-y-2">
+        <Accordion type="multiple">
           {payloads.map((item) => (
-            <details
-              key={item.id}
-              className="rounded-lg bg-zinc-950/[0.025] ring-1 ring-zinc-950/10 dark:bg-white/[0.03] dark:ring-white/10"
-            >
-              <summary className="flex cursor-pointer items-center gap-2 px-3 py-2 text-xs font-medium text-zinc-900 dark:text-zinc-100">
-                <span>{item.label}</span>
-                <span className="ml-auto text-zinc-500 dark:text-zinc-400">
-                  {item.tokens.toLocaleString()} est. tokens
-                </span>
-              </summary>
-              <pre className="max-h-80 overflow-auto whitespace-pre-wrap break-words border-zinc-950/10 border-t px-3 py-2 text-[11px] leading-snug text-zinc-800 dark:border-white/10 dark:text-zinc-200">
-                {item.value}
-              </pre>
-            </details>
+            <AccordionItem key={item.id} value={item.id}>
+              <AccordionTrigger>
+                <span className="min-w-0 flex-1 truncate">{item.label}</span>
+                <span className="text-muted-foreground">{item.tokens.toLocaleString()} est. tokens</span>
+              </AccordionTrigger>
+              <AccordionContent>
+                <pre className="max-h-80 overflow-auto whitespace-pre-wrap break-words text-[11px] leading-snug text-foreground">
+                  {item.value}
+                </pre>
+              </AccordionContent>
+            </AccordionItem>
           ))}
-        </div>
+        </Accordion>
       )}
     </div>
   )
@@ -510,26 +513,26 @@ function ContextAgui({ items, frontendTools }: { items: AguiItem[]; frontendTool
 function FrontendToolsSection({ tools }: { tools: FrontendTool[] }) {
   return (
     <section>
-      <header className="mb-2 flex items-baseline justify-between gap-2 text-[10px] font-medium uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
+      <header className="mb-2 flex items-baseline justify-between gap-2 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
         <span>Frontend tools</span>
         <span className="tabular-nums">{tools.length}</span>
       </header>
-      <div className="divide-y divide-zinc-950/10 overflow-hidden rounded-lg ring-1 ring-zinc-950/10 dark:divide-white/10 dark:ring-white/10">
+      <div className="divide-y divide-border overflow-hidden rounded-lg ring-1 ring-border">
         {tools.map((tool) => (
           <details key={tool.id} className="group">
             <summary className="grid cursor-pointer grid-cols-[minmax(0,1fr)_auto] gap-3 px-3 py-2 text-xs">
               <span className="min-w-0">
-                <span className="block truncate font-medium text-zinc-900 dark:text-zinc-100">{tool.name}</span>
+                <span className="block truncate font-medium text-foreground">{tool.name}</span>
                 {tool.description && (
-                  <span className="mt-0.5 block truncate text-zinc-500 dark:text-zinc-400">{tool.description}</span>
+                  <span className="mt-0.5 block truncate text-muted-foreground">{tool.description}</span>
                 )}
               </span>
-              <span className="tabular-nums text-zinc-500 dark:text-zinc-400">
+              <span className="tabular-nums text-muted-foreground">
                 {tool.tokens ? `${tool.tokens.toLocaleString()} tok` : '—'}
               </span>
             </summary>
             {tool.raw != null && (
-              <pre className="max-h-80 overflow-auto whitespace-pre-wrap break-words bg-white/70 px-3 py-2 text-[11px] leading-snug text-zinc-800 dark:bg-zinc-950/30 dark:text-zinc-200">
+              <pre className="max-h-80 overflow-auto whitespace-pre-wrap break-words bg-card/70 px-3 py-2 text-[11px] leading-snug text-foreground">
                 {formatJson(tool.raw)}
               </pre>
             )}
@@ -542,7 +545,7 @@ function FrontendToolsSection({ tools }: { tools: FrontendTool[] }) {
 
 function ContextEmpty({ children }: { children: ReactNode }) {
   return (
-    <div className="flex min-h-[12rem] items-center justify-center rounded-lg border border-dashed border-zinc-950/15 px-4 text-center text-xs text-zinc-400 dark:border-white/15 dark:text-zinc-600">
+    <div className="flex min-h-[12rem] items-center justify-center rounded-lg border border-dashed px-4 text-center text-xs text-muted-foreground/70">
       {children}
     </div>
   )

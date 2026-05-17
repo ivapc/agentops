@@ -1,6 +1,10 @@
-import { CheckIcon, ChevronDownIcon } from '@heroicons/react/16/solid'
-import { ArrowPathIcon } from '@heroicons/react/20/solid'
-import { Dropdown, DropdownButton, DropdownItem, DropdownLabel, DropdownMenu } from '#/components/ui/dropdown'
+import { Refresh01Icon } from '@hugeicons/core-free-icons'
+import { HugeiconsIcon } from '@hugeicons/react'
+import { useState } from 'react'
+import { Button } from '#/components/ui/button'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '#/components/ui/select'
+import { Separator } from '#/components/ui/separator'
+import { cn } from '#/lib/utils'
 
 export const AUTO_REFRESH_OPTIONS = [
   { value: 'off', label: 'Off', selectedLabel: 'Off' },
@@ -23,49 +27,57 @@ export const AUTO_REFRESH_MS: Record<AutoRefreshInterval, false | number> = {
 interface AutoRefreshSelectProps {
   value: AutoRefreshInterval
   onChange: (value: AutoRefreshInterval) => void
-  onRefresh: () => void
+  onRefresh?: () => void
+  /** Disables the refresh button while a fetch is in flight (no animation). */
   loading?: boolean
 }
 
+const SPIN_MS = 700
+
 export function AutoRefreshSelect({ value, onChange, onRefresh, loading = false }: AutoRefreshSelectProps) {
   const selected = AUTO_REFRESH_OPTIONS.find((option) => option.value === value) ?? AUTO_REFRESH_OPTIONS[0]
+  // Animate the refresh icon only on manual click — silent for background polls.
+  const [spin, setSpin] = useState(false)
+  const handleClick = () => {
+    if (!onRefresh) return
+    setSpin(true)
+    onRefresh()
+    window.setTimeout(() => setSpin(false), SPIN_MS)
+  }
 
   return (
-    <div className="inline-flex h-8 overflow-hidden rounded-md border border-zinc-950/10 bg-white text-sm/5 font-medium text-zinc-950 shadow-xs transition-colors dark:border-white/10 dark:bg-white/[0.03] dark:text-zinc-100 dark:shadow-none">
-      <button
-        type="button"
-        aria-label="Refresh now"
-        onClick={onRefresh}
-        disabled={loading}
-        className="inline-flex w-9 cursor-pointer items-center justify-center border-r border-zinc-950/10 transition-colors hover:bg-zinc-950/[0.03] focus:outline-hidden focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-focus-500/80 disabled:cursor-wait disabled:hover:bg-transparent dark:border-white/10 dark:hover:bg-white/[0.07]"
-      >
-        <ArrowPathIcon
-          className={[
-            'size-4 origin-center fill-zinc-500 transition-colors dark:fill-zinc-400',
-            loading ? 'fill-zinc-950 [animation:spin_700ms_cubic-bezier(0.22,1,0.36,1)] dark:fill-zinc-100' : '',
-          ].join(' ')}
-        />
-      </button>
-      <Dropdown>
-        <DropdownButton
-          as="button"
-          className="inline-flex h-full cursor-pointer items-center gap-2 px-3 whitespace-nowrap transition-colors hover:bg-zinc-950/[0.03] focus:outline-hidden focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-focus-500/80 dark:hover:bg-white/[0.07]"
+    <div className="inline-flex items-center gap-1">
+      {onRefresh && (
+        <Button
+          type="button"
+          aria-label="Refresh now"
+          variant="outline"
+          size="icon-sm"
+          onClick={handleClick}
+          disabled={loading}
         >
-          <span>{selected.selectedLabel}</span>
-          <ChevronDownIcon data-slot="icon" className="size-4 fill-zinc-500 opacity-60 dark:fill-zinc-400" />
-        </DropdownButton>
-        <DropdownMenu anchor="bottom end" className="z-[60] min-w-40">
+          <HugeiconsIcon
+            icon={Refresh01Icon}
+            className={cn(spin && '[animation:spin_700ms_cubic-bezier(0.22,1,0.36,1)]')}
+          />
+        </Button>
+      )}
+      <Select value={value} onValueChange={(v) => onChange(v as AutoRefreshInterval)}>
+        <SelectTrigger size="sm" aria-label="Auto refresh" className="border-border bg-transparent">
+          <span className="text-muted-foreground">Auto</span>
+          <Separator orientation="vertical" className="data-[orientation=vertical]:h-3.5" />
+          <SelectValue>
+            <span className="tabular-nums">{selected.selectedLabel}</span>
+          </SelectValue>
+        </SelectTrigger>
+        <SelectContent position="popper" align="end">
           {AUTO_REFRESH_OPTIONS.map((option) => (
-            <DropdownItem key={option.value} onClick={() => onChange(option.value)} className={controlMenuItemClass}>
-              {value === option.value ? <CheckIcon data-slot="icon" /> : <span data-slot="icon" />}
-              <DropdownLabel>{option.label}</DropdownLabel>
-            </DropdownItem>
+            <SelectItem key={option.value} value={option.value}>
+              {option.label}
+            </SelectItem>
           ))}
-        </DropdownMenu>
-      </Dropdown>
+        </SelectContent>
+      </Select>
     </div>
   )
 }
-
-const controlMenuItemClass =
-  '!cursor-pointer data-focus:!bg-zinc-100 data-focus:!text-zinc-950 dark:data-focus:!bg-white/10 dark:data-focus:!text-white dark:data-focus:*:data-[slot=icon]:!text-zinc-300'

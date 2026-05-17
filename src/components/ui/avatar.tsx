@@ -1,92 +1,91 @@
-import * as Headless from '@headlessui/react'
-import clsx from 'clsx'
-import type React from 'react'
-import { forwardRef } from 'react'
-import { TouchTarget } from './button'
-import { Link } from './link'
+import { Avatar as AvatarPrimitive } from 'radix-ui'
+import type * as React from 'react'
 
-type AvatarProps = {
-  src?: string | null
-  square?: boolean
-  initials?: string
-  alt?: string
-  className?: string
+import { cn } from '#/lib/utils.ts'
+
+function Avatar({
+  className,
+  size = 'default',
+  ...props
+}: React.ComponentProps<typeof AvatarPrimitive.Root> & {
+  size?: 'default' | 'sm' | 'lg'
+}) {
+  return (
+    <AvatarPrimitive.Root
+      data-slot="avatar"
+      data-size={size}
+      className={cn(
+        'group/avatar relative flex size-8 shrink-0 rounded-full select-none after:absolute after:inset-0 after:rounded-full after:border after:border-border after:mix-blend-darken data-[size=lg]:size-10 data-[size=sm]:size-6 dark:after:mix-blend-lighten',
+        className,
+      )}
+      {...props}
+    />
+  )
 }
 
-export function Avatar({
-  src = null,
-  square = false,
-  initials,
-  alt = '',
-  className,
-  ...props
-}: AvatarProps & React.ComponentPropsWithoutRef<'span'>) {
-  const hasExplicitSize =
-    typeof className === 'string' && /(?:^|\s)(?:size-|h-|w-|\[[^\]]*size|[a-z]+:\S*(?:size-|h-|w-))/.test(className)
+function AvatarImage({ className, ...props }: React.ComponentProps<typeof AvatarPrimitive.Image>) {
+  return (
+    <AvatarPrimitive.Image
+      data-slot="avatar-image"
+      className={cn('aspect-square size-full rounded-full object-cover', className)}
+      {...props}
+    />
+  )
+}
 
+function AvatarFallback({ className, ...props }: React.ComponentProps<typeof AvatarPrimitive.Fallback>) {
+  return (
+    <AvatarPrimitive.Fallback
+      data-slot="avatar-fallback"
+      className={cn(
+        'flex size-full items-center justify-center rounded-full bg-muted text-sm text-muted-foreground group-data-[size=sm]/avatar:text-xs',
+        className,
+      )}
+      {...props}
+    />
+  )
+}
+
+function AvatarBadge({ className, ...props }: React.ComponentProps<'span'>) {
   return (
     <span
-      data-slot="avatar"
-      {...props}
-      className={clsx(
+      data-slot="avatar-badge"
+      className={cn(
+        'absolute right-0 bottom-0 z-10 inline-flex items-center justify-center rounded-full bg-primary text-primary-foreground bg-blend-color ring-2 ring-background select-none',
+        'group-data-[size=sm]/avatar:size-2 group-data-[size=sm]/avatar:[&>svg]:hidden',
+        'group-data-[size=default]/avatar:size-2.5 group-data-[size=default]/avatar:[&>svg]:size-2',
+        'group-data-[size=lg]/avatar:size-3 group-data-[size=lg]/avatar:[&>svg]:size-2',
         className,
-        !hasExplicitSize && 'size-8',
-        // Basic layout
-        'inline-grid shrink-0 align-middle [--avatar-radius:20%] *:col-start-1 *:row-start-1',
-        'outline -outline-offset-1 outline-black/10 dark:outline-white/10',
-        // Border radius
-        square ? 'rounded-(--avatar-radius) *:rounded-(--avatar-radius)' : 'rounded-full *:rounded-full',
       )}
-    >
-      {initials && (
-        <svg
-          className="size-full fill-current p-[5%] text-[48px] font-medium uppercase select-none"
-          viewBox="0 0 100 100"
-          aria-hidden={alt ? undefined : 'true'}
-        >
-          {alt && <title>{alt}</title>}
-          <text x="50%" y="50%" alignmentBaseline="middle" dominantBaseline="middle" textAnchor="middle" dy=".125em">
-            {initials}
-          </text>
-        </svg>
-      )}
-      {src && <img className="size-full" src={src} alt={alt} />}
-    </span>
+      {...props}
+    />
   )
 }
 
-export const AvatarButton = forwardRef(function AvatarButton(
-  {
-    src,
-    square = false,
-    initials,
-    alt,
-    className,
-    ...props
-  }: AvatarProps &
-    (
-      | ({ href?: never } & Omit<Headless.ButtonProps, 'as' | 'className'>)
-      | ({ href: string } & Omit<React.ComponentPropsWithoutRef<typeof Link>, 'className'>)
-    ),
-  ref: React.ForwardedRef<HTMLButtonElement>,
-) {
-  const classes = clsx(
-    className,
-    square ? 'rounded-[20%]' : 'rounded-full',
-    'relative inline-grid focus:not-data-focus:outline-hidden data-focus:outline-2 data-focus:outline-offset-2 data-focus:outline-focus-500',
+function AvatarGroup({ className, ...props }: React.ComponentProps<'div'>) {
+  return (
+    <div
+      data-slot="avatar-group"
+      className={cn(
+        'group/avatar-group flex -space-x-2 *:data-[slot=avatar]:ring-2 *:data-[slot=avatar]:ring-background',
+        className,
+      )}
+      {...props}
+    />
   )
+}
 
-  return typeof props.href === 'string' ? (
-    <Link {...props} className={classes} ref={ref as React.ForwardedRef<HTMLAnchorElement>}>
-      <TouchTarget>
-        <Avatar src={src} square={square} initials={initials} alt={alt} />
-      </TouchTarget>
-    </Link>
-  ) : (
-    <Headless.Button {...props} className={classes} ref={ref}>
-      <TouchTarget>
-        <Avatar src={src} square={square} initials={initials} alt={alt} />
-      </TouchTarget>
-    </Headless.Button>
+function AvatarGroupCount({ className, ...props }: React.ComponentProps<'div'>) {
+  return (
+    <div
+      data-slot="avatar-group-count"
+      className={cn(
+        'relative flex size-8 shrink-0 items-center justify-center rounded-full bg-muted text-xs/relaxed text-muted-foreground ring-2 ring-background group-has-data-[size=lg]/avatar-group:size-10 group-has-data-[size=sm]/avatar-group:size-6 [&>svg]:size-4 group-has-data-[size=lg]/avatar-group:[&>svg]:size-5 group-has-data-[size=sm]/avatar-group:[&>svg]:size-3',
+        className,
+      )}
+      {...props}
+    />
   )
-})
+}
+
+export { Avatar, AvatarBadge, AvatarFallback, AvatarGroup, AvatarGroupCount, AvatarImage }

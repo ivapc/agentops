@@ -11,26 +11,18 @@ import type {
   LatencyRow,
   ListSessionsOpts,
   ListTracesOpts,
+  OverviewAggregate,
+  OverviewOpts,
   SessionSummary,
   TelemetryProvider,
+  ToolErrorRow,
+  ToolPayloadRow,
+  ToolSpark,
+  TopOpts,
   TraceSummary,
 } from './types'
 
-export type {
-  GetTraceOpts,
-  InventoryDiscoveryKind,
-  InventoryObservation,
-  LatencyKind,
-  LatencyOpts,
-  LatencyRow,
-  ListSessionsOpts,
-  ListTracesOpts,
-  SessionFetch,
-  SessionSummary,
-  TelemetryProvider,
-  TraceFetch,
-  TraceSummary,
-} from './types'
+export type * from './types'
 
 // Cookie wins over env so the settings UI works without a restart. Stale
 // cookies (provider whose env is no longer set) fall through to the next tier.
@@ -128,7 +120,7 @@ export async function getTrace(traceId: string): Promise<{
 } | null> {
   const p = getActiveProvider()
   const r = await p.getTrace(traceId)
-  if (r.kind !== 'found') return null
+  if (!r) return null
   return { spans: r.spans, truncated: !!r.truncated, provider: p.name, fingerprint: p.fingerprint }
 }
 
@@ -164,19 +156,13 @@ export async function getSession(
   traceIds: string[]
   provider: string
   fingerprint: string
+  title?: string
 } | null> {
   const p = getActiveProvider()
   if (!p.getSession) return null
   const r = await p.getSession(sessionId, opts)
-  if (r.kind !== 'found') return null
-  return {
-    sessionId: r.sessionId,
-    source: r.source,
-    spans: r.spans,
-    traceIds: r.traceIds,
-    provider: p.name,
-    fingerprint: p.fingerprint,
-  }
+  if (!r) return null
+  return { ...r, provider: p.name, fingerprint: p.fingerprint }
 }
 
 export async function discoverInventory(
@@ -192,4 +178,34 @@ export async function listLatencyPercentiles(kind: LatencyKind, opts?: LatencyOp
   const p = getActiveProvider()
   if (!p.listLatencyPercentiles) return []
   return await p.listLatencyPercentiles(kind, opts)
+}
+
+export async function listToolErrorRates(opts?: TopOpts): Promise<ToolErrorRow[]> {
+  const p = getActiveProvider()
+  if (!p.listToolErrorRates) return []
+  return await p.listToolErrorRates(opts)
+}
+
+export async function listToolPayloadSizes(opts?: TopOpts): Promise<ToolPayloadRow[]> {
+  const p = getActiveProvider()
+  if (!p.listToolPayloadSizes) return []
+  return await p.listToolPayloadSizes(opts)
+}
+
+export async function listToolErrorRatesBucketed(opts?: TopOpts): Promise<ToolSpark[]> {
+  const p = getActiveProvider()
+  if (!p.listToolErrorRatesBucketed) return []
+  return await p.listToolErrorRatesBucketed(opts)
+}
+
+export async function listToolPayloadSizesBucketed(opts?: TopOpts): Promise<ToolSpark[]> {
+  const p = getActiveProvider()
+  if (!p.listToolPayloadSizesBucketed) return []
+  return await p.listToolPayloadSizesBucketed(opts)
+}
+
+export async function getOverview(opts?: OverviewOpts): Promise<OverviewAggregate> {
+  const p = getActiveProvider()
+  if (!p.getOverview) return { runs: 0, erroredRuns: 0, p95ChatMs: 0, totalCostUsd: 0 }
+  return await p.getOverview(opts)
 }

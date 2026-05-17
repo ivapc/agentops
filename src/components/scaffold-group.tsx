@@ -16,27 +16,15 @@ export function ScaffoldGroup({ messages }: { messages: ScaffoldMessage[] }) {
   const onlySystem = messages.every((m) => m.role === 'system')
   const label = isAgui ? 'State sync' : onlySystem ? 'System context' : 'Scaffold'
   return (
-    <div
-      className={[
-        'rounded-md border text-xs',
-        isAgui
-          ? 'border-accent-500/20 bg-accent-500/[0.04] dark:border-accent-400/20 dark:bg-accent-400/[0.04]'
-          : 'border-zinc-950/5 bg-zinc-50/50 dark:border-white/5 dark:bg-white/[0.02]',
-      ].join(' ')}
-    >
+    <div className="rounded-md border bg-muted/40 text-xs">
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className={[
-          'flex w-full items-center gap-2 rounded-md px-3 py-1.5 text-left',
-          isAgui
-            ? 'text-accent-700 hover:bg-accent-500/[0.08] dark:text-accent-300 dark:hover:bg-accent-400/[0.08]'
-            : 'text-zinc-500 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-white/5',
-        ].join(' ')}
+        className="flex w-full items-center gap-2 rounded-md px-3 py-1.5 text-left text-muted-foreground hover:bg-accent/50"
       >
         {open ? <ChevronDownIcon className="size-3" /> : <ChevronRightIcon className="size-3" />}
         {isAgui && (
-          <span className="rounded bg-accent-500/15 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider text-accent-700 dark:text-accent-300">
+          <span className="rounded bg-muted px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider text-muted-foreground ring-1 ring-border">
             ag-ui
           </span>
         )}
@@ -48,22 +36,12 @@ export function ScaffoldGroup({ messages }: { messages: ScaffoldMessage[] }) {
         </span>
       </button>
       {open && (
-        <div
-          className={[
-            'flex flex-col gap-2 border-t px-3 py-2',
-            isAgui ? 'border-accent-500/15 dark:border-accent-400/15' : 'border-zinc-950/5 dark:border-white/5',
-          ].join(' ')}
-        >
+        <div className="flex flex-col gap-2 border-border border-t px-3 py-2">
           {messages.map((m) => (
-            <div
-              key={`${m.spanId ?? ''}-${m.seq}`}
-              className="flex flex-col gap-1 text-[11px] text-zinc-700 dark:text-zinc-300"
-            >
-              <span className="text-[9px] font-semibold uppercase tracking-wider text-zinc-400 dark:text-zinc-500">
-                {m.role}
-              </span>
+            <div key={`${m.spanId ?? ''}-${m.seq}`} className="flex flex-col gap-1 text-[11px] text-foreground">
+              <span className="text-[9px] font-semibold uppercase tracking-wider text-muted-foreground">{m.role}</span>
               <Markdown>{m.content}</Markdown>
-              <div className="text-[10px] text-zinc-400 dark:text-zinc-500">{formatTime(m.timestamp)}</div>
+              <div className="text-[10px] text-muted-foreground">{formatTime(m.timestamp)}</div>
             </div>
           ))}
         </div>
