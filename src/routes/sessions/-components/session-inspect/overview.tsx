@@ -3,10 +3,17 @@ import { useMemo, useState } from 'react'
 import { contextWindowFor, formatTokens } from '#/components/context-window'
 import { IconTabs } from '#/components/icon-tabs'
 import { useBreakdowns } from '#/hooks/use-breakdowns'
-import { descendantSpans, findOrchestratorIds, formatCost, type Span, spanHasError } from '#/lib/spans'
+import {
+  descendantSpans,
+  findOrchestratorIds,
+  formatCost,
+  type Span,
+  spanHasError,
+  subagentChatSpans,
+} from '#/lib/spans'
 import { extractTurns, type Turn, turnTotals } from '#/lib/turns'
-import { ContextTools, collectToolGroups } from './context'
-import { formatDuration } from './shared'
+import { ContextTools, collectFrontendTools, collectToolGroups } from './context'
+import { displayFor, formatDuration } from './shared'
 import { DetailPanel, SpanTreeList } from './tree'
 
 type InspectorTab = 'details' | 'tools' | 'logs'
@@ -88,17 +95,47 @@ export function SessionInspectLayout({
 }
 
 function SessionTools({ spans, selectedSpan }: { spans: Span[]; selectedSpan: Span | undefined }) {
+  // Frontend tools are determined session-wide (their backend-execution
+  // evidence doesn't move with the scope), so this is computed off the full
+  // span list and passed in even when the visible groups are scoped to a
+  // single agent.
+  const frontendNames = useMemo(() => new Set(collectFrontendTools(spans).map((t) => t.name)), [spans])
+
   const groups = useMemo(() => {
     const scope = selectedSpan
       ? selectedSpan.operation === 'invoke_agent'
         ? [selectedSpan, ...descendantSpans(spans, selectedSpan.id)]
         : [selectedSpan]
       : spans
-    return collectToolGroups(scope)
-  }, [spans, selectedSpan])
+    return collectToolGroups(scope, frontendNames)
+  }, [spans, selectedSpan, frontendNames])
+
+  const totals = useMemo(() => {
+    let count = 0
+    let tokens = 0
+    for (const group of groups) {
+      count += group.tools.length
+      tokens += group.tokens
+    }
+    return { count, tokens }
+  }, [groups])
+
+  const scopeLabel =
+    selectedSpan?.operation === 'invoke_agent'
+      ? (selectedSpan.agentName ?? selectedSpan.name)
+      : selectedSpan
+        ? displayFor(selectedSpan).name
+        : 'All agents'
 
   return (
     <div className="px-4 py-4">
+      <header className="mb-3 flex items-baseline justify-between gap-2 text-[11px]">
+        <span className="truncate font-medium text-zinc-700 dark:text-zinc-200">{scopeLabel}</span>
+        <span className="shrink-0 tabular-nums text-zinc-500 dark:text-zinc-400">
+          {totals.count} tool{totals.count === 1 ? '' : 's'} ·{' '}
+          {totals.tokens ? `${formatTokens(totals.tokens)} tokens` : '—'}
+        </span>
+      </header>
       <ContextTools groups={groups} />
     </div>
   )
@@ -176,21 +213,15 @@ function SessionOverview({ spans }: { spans: Span[] }) {
     return { input, output, cached, cost, errors, duration }
   }, [turns])
 
-  // Subagent tokens = all chat spans not in the orchestrator's turn list.
-  // Subagents have their own system/tools/messages, but those are nested and
-  // not broken out here — surfacing the lump sum makes it visible that the
-  // orchestrator handed work off, without double-counting the parent's prompt.
   const subagent = useMemo(() => {
-    const orchChatIds = new Set(chatSpans.map((c) => c.id))
     let tokens = 0
     let cost = 0
-    for (const span of spans) {
-      if (span.operation !== 'chat' || orchChatIds.has(span.id)) continue
+    for (const span of subagentChatSpans(spans)) {
       tokens += (span.inputTokens ?? 0) + (span.outputTokens ?? 0)
       cost += span.costUsd ?? 0
     }
     return { tokens, cost }
-  }, [spans, chatSpans])
+  }, [spans])
 
   const peak = useMemo(() => {
     let peakSpan: Span | null = null
@@ -232,12 +263,12 @@ function SessionOverview({ spans }: { spans: Span[] }) {
         <div className="mt-3 grid grid-cols-2 gap-2 text-xs sm:grid-cols-4">
           <SummaryMetric
             label="Tokens"
-            value={allTokens ? allTokens.toLocaleString() : '—'}
+            value={allTokens ? formatTokens(allTokens) : '—'}
             sub={allTokens ? `${formatTokens(inputTokens)} in · ${formatTokens(outputTokens)} out` : undefined}
           />
           <SummaryMetric
             label="Cached"
-            value={cachedTokens ? `${cachedTokens.toLocaleString()} · ${cachePct}%` : '—'}
+            value={cachedTokens ? `${formatTokens(cachedTokens)} · ${cachePct}%` : '—'}
             tone={cachedTokens ? 'good' : undefined}
           />
           <SummaryMetric label="Cost" value={formatCost(totalCost) ? `$${formatCost(totalCost)}` : '—'} />
@@ -269,7 +300,6 @@ function SessionOverview({ spans }: { spans: Span[] }) {
         <ContextBreakdown
           systemTokens={total.systemTokens}
           toolDefsTokens={total.toolDefsTokens}
-          toolDefsCount={total.toolDefsCount}
           messagesTokens={total.messagesTokens}
           subagentTokens={subagent.tokens}
         />
@@ -311,17 +341,12 @@ export interface ContextSegment {
 export function computeContextSegments(input: {
   systemTokens: number
   toolDefsTokens: number
-  toolDefsCount: number
   messagesTokens: number
   subagentTokens: number
 }): ContextSegment[] {
   const raw = [
     { key: 'system' as const, label: 'System', tokens: input.systemTokens },
-    {
-      key: 'tools' as const,
-      label: `Tools${input.toolDefsCount ? ` (${input.toolDefsCount})` : ''}`,
-      tokens: input.toolDefsTokens,
-    },
+    { key: 'tools' as const, label: 'Tools', tokens: input.toolDefsTokens },
     { key: 'messages' as const, label: 'Messages', tokens: input.messagesTokens },
     { key: 'subagents' as const, label: 'Subagents', tokens: input.subagentTokens },
   ]
@@ -332,13 +357,11 @@ export function computeContextSegments(input: {
 function ContextBreakdown({
   systemTokens,
   toolDefsTokens,
-  toolDefsCount,
   messagesTokens,
   subagentTokens,
 }: {
   systemTokens: number
   toolDefsTokens: number
-  toolDefsCount: number
   messagesTokens: number
   subagentTokens: number
 }) {
@@ -346,7 +369,6 @@ function ContextBreakdown({
   const segments = computeContextSegments({
     systemTokens,
     toolDefsTokens,
-    toolDefsCount,
     messagesTokens,
     subagentTokens,
   })
@@ -436,7 +458,7 @@ function SessionTurnRow({ turn, index }: { turn: Turn; index: number }) {
       </span>
       <span className="flex shrink-0 items-center gap-2 tabular-nums text-zinc-500 dark:text-zinc-400">
         {errors ? <span className="text-rose-600 dark:text-rose-300">{errors} err</span> : null}
-        <span>{tokenTotal ? tokenTotal.toLocaleString() : '—'} tok</span>
+        <span>{tokenTotal ? formatTokens(tokenTotal) : '—'} tok</span>
         {totals.cachedTokens > 0 && (
           <span className="text-emerald-700 dark:text-emerald-300">
             {formatTokens(totals.cachedTokens)} cached ({cachePct}%)
