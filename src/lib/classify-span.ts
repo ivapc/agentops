@@ -76,7 +76,21 @@ export interface Classification {
   responseId?: string
   systemFingerprint?: string
   sessionId?: string
-  sessionSource?: 'attribute' | 'agent-instance'
+  sessionSource?: 'attribute' | 'trace'
+  // Present on chat spans that are part of a CopilotKit/AG-UI run. Absent on
+  // utility LLM calls (title generation, summarization, etc.) that share the
+  // same trace but are not part of the conversation flow.
+  agUiRunId?: string
+  // Semantic purpose of the LLM call when it's not a user-facing conversation
+  // turn — e.g. "title_generation", "summarization". Emitted by the
+  // instrumented SDK via `teammate.llm.purpose` (app-scoped per OTel naming
+  // spec). Falls back to `gen_ai.operation.purpose` for generic producers.
+  // Distinct from `gen_ai.operation.name` which MEAI uses for span
+  // classification (chat, execute_tool, etc.) and must not be overridden.
+  operationName?: string
+  // `gen_ai.output.type` — `text` by default; `json`/`json_schema`/`image`
+  // signal a structured call (title gen, classification, etc.).
+  outputType?: string
 }
 
 export function classifySpan(name: string, attrs: Record<string, unknown>): Classification {
@@ -150,16 +164,24 @@ export function classifySpan(name: string, attrs: Record<string, unknown>): Clas
   //      span names — fallback for SDKs that don't emit a session attr.
   // The `sessionSource` field discloses which path produced the id so the
   // UI can label heuristics.
+  const agUiRunId = pickString(attrs, ['ag_ui.run_id', 'ag_ui_run_id'])
+  if (agUiRunId) c.agUiRunId = agUiRunId
+
+  const operationName = pickString(attrs, [
+    'teammate.llm.purpose',
+    'teammate_llm_purpose',
+    'gen_ai.operation.purpose',
+    'gen_ai_operation_purpose',
+  ])
+  if (operationName) c.operationName = operationName
+
+  const outputType = pickString(attrs, ['gen_ai.output.type', 'gen_ai_output_type'])
+  if (outputType) c.outputType = outputType
+
   const sessionAttr = pickString(attrs, SESSION_ATTR_KEYS)
   if (sessionAttr) {
     c.sessionId = sessionAttr
     c.sessionSource = 'attribute'
-  } else if (operation === 'invoke_agent') {
-    const hex = extractAgentInstanceId(name)
-    if (hex) {
-      c.sessionId = hex
-      c.sessionSource = 'agent-instance'
-    }
   }
 
   if (operation === 'tool') {
@@ -176,11 +198,17 @@ export function classifySpan(name: string, attrs: Record<string, unknown>): Clas
   if (operation === 'chat') {
     // OTEL semconv keys first, Logfire/OpenLLMetry `llm_input`/`llm_output` fallback.
     const input = parseJson(
-      pickString(attrs, ['gen_ai.input.messages', 'gen_ai_input_messages', 'llm_input', 'llm.input']),
+      pickString(attrs, ['gen_ai.input.messages', 'gen_ai_input_messages', 'llm_input', 'llm.input', '_o2_llm_input']),
     )
     if (input !== undefined) c.llmInput = input
     const output = parseJson(
-      pickString(attrs, ['gen_ai.output.messages', 'gen_ai_output_messages', 'llm_output', 'llm.output']),
+      pickString(attrs, [
+        'gen_ai.output.messages',
+        'gen_ai_output_messages',
+        'llm_output',
+        'llm.output',
+        '_o2_llm_output',
+      ]),
     )
     if (output !== undefined) c.llmOutput = output
 
@@ -244,15 +272,6 @@ function pickToolName(name: string, attrs: Record<string, unknown>): string | un
 // summaries (built from a SQL roll-up of span names) need the same parser.
 export function extractAgentName(spanName: string): string | undefined {
   const m = spanName.match(/^invoke_agent\s+([^(\s]+)/)
-  return m?.[1]
-}
-
-// "invoke_agent ProverbsAgent(fc17225...)" -> "fc17225...". The hex is the
-// agent-runtime instance ID; some SDKs reuse it across turns of the same
-// session, making it a useful session-correlation fallback when no real
-// `session.id` attribute is set.
-export function extractAgentInstanceId(spanName: string): string | undefined {
-  const m = spanName.match(/^invoke_agent\s+[^(]+\(([^)]+)\)/)
   return m?.[1]
 }
 

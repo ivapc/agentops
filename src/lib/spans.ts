@@ -75,12 +75,22 @@ export interface Span {
 
   // Session correlation. `attribute` = lifted from a real semconv key
   // (session.id / gen_ai.conversation.id / langfuse.session.id / ...).
-  // `agent-instance` = fallback derived from the agent-instance hex in
-  // `invoke_agent <Name>(<hex>)` span names when no attribute is present.
-  // UI discloses the source so heuristic-derived sessions don't masquerade
-  // as real ones.
+  // `trace` = fallback using the OTel trace_id when no session attribute
+  // is present. UI discloses the source so single-trace sessions don't
+  // masquerade as multi-turn conversations.
   sessionId?: string
-  sessionSource?: 'attribute' | 'agent-instance'
+  sessionSource?: 'attribute' | 'trace'
+  agUiRunId?: string
+  // Semantic purpose — e.g. "title_generation", "summarization". Set from
+  // `teammate.llm.purpose` (app-scoped, OTel compliant). Not `.operation.name`.
+  operationName?: string
+  // `gen_ai.output.type` — `text` by default; non-text values mark a
+  // structured call so the UI doesn't render it as a chat reply.
+  outputType?: string
+
+  // All provider attributes for the raw-fields inspector view. JsonValue so it
+  // survives the SSR serialization boundary.
+  rawAttributes?: Record<string, JsonValue>
 }
 
 // Treat a span as root when its declared parent is not present in the trace.
@@ -95,26 +105,61 @@ export function normalizeTraceRoots(spans: Span[]): void {
 }
 
 // Stamp every span in a trace with the same sessionId. A real `attribute`
-// source wins over the `agent-instance` heuristic when both appear in the
-// same trace — so spans that didn't carry the attribute themselves get
-// stamped with it rather than with a fallback hex.
+// source wins; otherwise fall back to the trace_id (one trace = one session)
+// so the UI never invents cross-trace stitching that the data doesn't support.
 export function propagateSessionInTrace(spans: Span[]): void {
   let attrId: string | undefined
-  let heuristicId: string | undefined
   for (const s of spans) {
-    if (!s.sessionId) continue
-    if (s.sessionSource === 'attribute' && !attrId) attrId = s.sessionId
-    else if (s.sessionSource === 'agent-instance' && !heuristicId) heuristicId = s.sessionId
-  }
-  const id = attrId ?? heuristicId
-  if (!id) return
-  const source: 'attribute' | 'agent-instance' = attrId ? 'attribute' : 'agent-instance'
-  for (const s of spans) {
-    if (!s.sessionId) {
-      s.sessionId = id
-      s.sessionSource = source
+    if (s.sessionSource === 'attribute' && s.sessionId) {
+      attrId = s.sessionId
+      break
     }
   }
+  if (attrId) {
+    for (const s of spans) {
+      if (!s.sessionId) {
+        s.sessionId = attrId
+        s.sessionSource = 'attribute'
+      }
+    }
+    return
+  }
+  const traceId = spans[0]?.traceId
+  if (!traceId) return
+  for (const s of spans) {
+    s.sessionId = traceId
+    s.sessionSource = 'trace'
+  }
+}
+
+// SDKs set these attrs on a wrapping Activity (utility purpose, AG-UI run)
+// but don't re-stamp them on inner spans — inherit from the nearest ancestor.
+export function propagateInheritedAttrs(spans: Span[]): void {
+  const byId = new Map(spans.map((s) => [s.id, s]))
+  for (const s of spans) {
+    if (!s.parentId) continue
+    if (s.operationName && s.agUiRunId) continue
+    let cur: Span | undefined = byId.get(s.parentId)
+    while (cur && (!s.operationName || !s.agUiRunId)) {
+      if (!s.operationName && cur.operationName) s.operationName = cur.operationName
+      if (!s.agUiRunId && cur.agUiRunId) s.agUiRunId = cur.agUiRunId
+      cur = cur.parentId ? byId.get(cur.parentId) : undefined
+    }
+  }
+}
+
+// Side-channel LLM calls (title gen, summarization). Explicit signal:
+// `teammate.llm.purpose`. Fallback: in an AG-UI trace, conversation chats
+// carry `ag_ui.run_id` and utility chats don't.
+export function findUtilityChatIds(spans: Span[]): Set<string> {
+  const traceHasAgUiRun = spans.some((s) => s.agUiRunId != null)
+  const out = new Set<string>()
+  for (const s of spans) {
+    if (s.operation !== 'chat') continue
+    if (s.operationName) out.add(s.id)
+    else if (traceHasAgUiRun && !s.agUiRunId) out.add(s.id)
+  }
+  return out
 }
 
 export const KIND_LETTER: Record<SpanKind, string> = {

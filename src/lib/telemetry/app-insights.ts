@@ -6,7 +6,14 @@ import {
   USER_ID_ATTR_KEYS,
   USER_NAME_ATTR_KEYS,
 } from '#/lib/classify-span'
-import { normalizeTraceRoots, propagateSessionInTrace, type Span, type SpanKind } from '#/lib/spans'
+import type { JsonValue } from '#/lib/json'
+import {
+  normalizeTraceRoots,
+  propagateInheritedAttrs,
+  propagateSessionInTrace,
+  type Span,
+  type SpanKind,
+} from '#/lib/spans'
 import { aggregateSessions, groupBy, mapLatencyRow, pickIdentityValue } from './shared'
 import type {
   GetTraceOpts,
@@ -98,6 +105,7 @@ export function createAppInsightsProvider(cfg: AppInsightsConfig): TelemetryProv
       const spans = rows.map((r) => normalizeAiRow(r, traceId))
       normalizeTraceRoots(spans)
       propagateSessionInTrace(spans)
+      propagateInheritedAttrs(spans)
       return { spans, truncated: rows.length >= SESSION_SCAN_LIMIT }
     },
 
@@ -163,13 +171,14 @@ export function createAppInsightsProvider(cfg: AppInsightsConfig): TelemetryProv
 
     async getSession(sessionId, opts): Promise<SessionFetch> {
       if (!isSafeId(sessionId)) return null
-      const isHex = /^[a-f0-9]+$/i.test(sessionId)
-      const hexClause = isHex ? `or name matches regex "^invoke_agent\\\\s+.*\\\\(${sessionId}\\\\)"` : ''
       const userFilter = kqlIdentityFilter(opts)
+      // Fallback sessions are just the trace id (operation_Id in AI), so match
+      // both that and any real session attribute. Real attributes win when
+      // both apply because the resulting trace set is the same anyway.
       const tracesQ = `
         union dependencies, requests
         | extend sess = ${SESSION_ID_COALESCE}
-        | where sess == "${sessionId}" ${hexClause}
+        | where sess == "${sessionId}" or operation_Id == "${sessionId}"
         ${userFilter ? `| where ${userFilter}` : ''}
         | distinct operation_Id
       `
@@ -190,11 +199,10 @@ export function createAppInsightsProvider(cfg: AppInsightsConfig): TelemetryProv
       for (const trSpans of groupBy(spans, (s) => s.traceId).values()) {
         normalizeTraceRoots(trSpans)
         propagateSessionInTrace(trSpans)
+        propagateInheritedAttrs(trSpans)
       }
 
-      const source: 'attribute' | 'agent-instance' = spans.some((s) => s.sessionSource === 'attribute')
-        ? 'attribute'
-        : 'agent-instance'
+      const source: 'attribute' | 'trace' = spans.some((s) => s.sessionSource === 'attribute') ? 'attribute' : 'trace'
       let title: string | undefined
       for (const r of spanRows) {
         const cd = parseCustomDimensions(r.customDimensions)
@@ -229,7 +237,9 @@ export function createAppInsightsProvider(cfg: AppInsightsConfig): TelemetryProv
     async listLatencyPercentiles(kind: LatencyKind, opts?: LatencyOpts): Promise<LatencyRow[]> {
       const limit = opts?.limit ?? 5
       const filter =
-        kind === 'generation' ? `| where tostring(customDimensions["gen_ai.operation.name"]) == "chat"` : ''
+        kind === 'generation'
+          ? `| where tostring(customDimensions["gen_ai.operation.name"]) == "chat"`
+          : `| where name startswith "invoke_agent " or tostring(customDimensions["gen_ai.operation.name"]) == "chat"`
       const q = `
         union dependencies, requests
         ${filter}
@@ -296,7 +306,22 @@ function normalizeAiRow(row: Record<string, unknown>, traceId: string): Span {
     startMs,
     endMs,
     ...classifySpan(operationName, cd),
+    rawAttributes: buildAiRawAttributes(row, cd),
   }
+}
+
+// customDimensions wins on key collisions — those are the canonical OTel attrs.
+function buildAiRawAttributes(
+  row: Record<string, unknown>,
+  customDimensions: Record<string, unknown>,
+): Record<string, JsonValue> {
+  const out: Record<string, JsonValue> = {}
+  for (const [k, v] of Object.entries(row)) {
+    if (k === 'customDimensions') continue
+    out[k] = v as JsonValue
+  }
+  for (const [k, v] of Object.entries(customDimensions)) out[k] = v as JsonValue
+  return out
 }
 
 function toOpenObserveShape(row: Record<string, unknown>): Record<string, unknown> {

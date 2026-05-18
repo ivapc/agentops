@@ -1,5 +1,14 @@
 import { ChevronDownIcon, ChevronRightIcon } from '@heroicons/react/16/solid'
-import { useMemo, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
+import {
+  Command,
+  CommandDialog,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from '#/components/ui/command'
 import { asMessages, type ChatMessage, type MessagePart, type MessageRole } from '#/lib/conversation'
 import { formatJson, type JsonValue } from '#/lib/json'
 import { formatCost, resolveToolCalls, type Span, spanHasError, type ToolCallResolution } from '#/lib/spans'
@@ -28,7 +37,7 @@ const NORMAL_FINISH = new Set(['stop', 'end_turn', 'complete', 'end', 'eos'])
 // All rails, elbow, and indicator share this single x-axis so nothing can drift.
 const railX = (depth: number) => depth * INDENT + INDENT / 2
 
-function buildRows(spans: Span[], collapsedIds: Set<string>): Row[] {
+function buildRows(spans: Span[], collapsedIds: Set<string>, fullSpans: boolean): Row[] {
   const byParent = new Map<string | null, Span[]>()
   for (const span of spans) {
     const siblings = byParent.get(span.parentId) ?? []
@@ -39,13 +48,13 @@ function buildRows(spans: Span[], collapsedIds: Set<string>): Row[] {
 
   // Hide spans classified as plain http — those are the SDK-level transport
   // calls (POST /v1/chat/completions etc.). Children re-parent up so the
-  // tree stays connected.
+  // tree stays connected. In full mode, render them as real nodes.
   const visibleChildren = new Map<string | null, Span[]>()
   const collect = (parentId: string | null): Span[] => {
     if (visibleChildren.has(parentId)) return visibleChildren.get(parentId) as Span[]
     const out: Span[] = []
     for (const span of byParent.get(parentId) ?? []) {
-      if (span.operation === 'http') out.push(...collect(span.id))
+      if (!fullSpans && span.operation === 'http') out.push(...collect(span.id))
       else out.push(span)
     }
     visibleChildren.set(parentId, out)
@@ -99,11 +108,21 @@ interface SpanTreeListProps {
   spans: Span[]
   selectedId: string | null
   onSelect: (id: string) => void
+  fullSpans?: boolean
+  paletteOpen?: boolean
+  onPaletteOpenChange?: (open: boolean) => void
 }
 
-export function SpanTreeList({ spans, selectedId, onSelect }: SpanTreeListProps) {
+export function SpanTreeList({
+  spans,
+  selectedId,
+  onSelect,
+  fullSpans = false,
+  paletteOpen = false,
+  onPaletteOpenChange,
+}: SpanTreeListProps) {
   const [collapsedIds, setCollapsedIds] = useState(() => new Set<string>())
-  const rows = useMemo(() => buildRows(spans, collapsedIds), [spans, collapsedIds])
+  const rows = useMemo(() => buildRows(spans, collapsedIds, fullSpans), [spans, collapsedIds, fullSpans])
 
   const toggleCollapsed = (id: string) => {
     setCollapsedIds((prev) => {
@@ -114,26 +133,85 @@ export function SpanTreeList({ spans, selectedId, onSelect }: SpanTreeListProps)
     })
   }
 
-  if (rows.length === 0) {
-    return (
-      <div className="flex h-full items-center justify-center px-3 text-center text-xs text-muted-foreground/70">
-        No spans in this session.
-      </div>
-    )
-  }
+  const paletteItems = useMemo(() => {
+    const byId = new Map(spans.map((s) => [s.id, s]))
+    const visible = fullSpans ? spans : spans.filter((s) => s.operation !== 'http')
+    return visible.map((span) => {
+      const parent = span.parentId ? byId.get(span.parentId) : undefined
+      const display = displayFor(span)
+      const parentDisplay = parent ? displayFor(parent) : undefined
+      return { span, display, parentName: parentDisplay?.name }
+    })
+  }, [spans, fullSpans])
+
+  const handlePaletteSelect = useCallback(
+    (id: string) => {
+      const byId = new Map(spans.map((s) => [s.id, s]))
+      setCollapsedIds((prev) => {
+        const next = new Set(prev)
+        let cursor: Span | undefined = byId.get(id)
+        while (cursor?.parentId) {
+          next.delete(cursor.parentId)
+          cursor = byId.get(cursor.parentId)
+        }
+        return next
+      })
+      onSelect(id)
+      onPaletteOpenChange?.(false)
+      requestAnimationFrame(() => {
+        document.querySelector(`[data-span-id="${id}"]`)?.scrollIntoView({ block: 'center' })
+      })
+    },
+    [spans, onSelect, onPaletteOpenChange],
+  )
 
   return (
-    <ul className="py-1">
-      {rows.map((row) => (
-        <SpanTreeRow
-          key={row.span.id}
-          row={row}
-          selected={row.span.id === selectedId}
-          onSelect={() => onSelect(row.span.id)}
-          onToggleCollapse={() => toggleCollapsed(row.span.id)}
-        />
-      ))}
-    </ul>
+    <>
+      {rows.length === 0 ? (
+        <div className="flex h-full items-center justify-center px-3 text-center text-xs text-muted-foreground/70">
+          No spans in this session.
+        </div>
+      ) : (
+        <ul className="py-1">
+          {rows.map((row) => (
+            <SpanTreeRow
+              key={row.span.id}
+              row={row}
+              selected={row.span.id === selectedId}
+              onSelect={() => onSelect(row.span.id)}
+              onToggleCollapse={() => toggleCollapsed(row.span.id)}
+            />
+          ))}
+        </ul>
+      )}
+      <CommandDialog open={paletteOpen} onOpenChange={(o) => onPaletteOpenChange?.(o)} title="Jump to span">
+        <Command>
+          <CommandInput placeholder="Find a span by name, model, or tool…" />
+          <CommandList>
+            <CommandEmpty>No spans match.</CommandEmpty>
+            <CommandGroup>
+              {paletteItems.map(({ span, display, parentName }) => (
+                <CommandItem
+                  key={span.id}
+                  value={`${display.tagLabel} ${display.name} ${parentName ?? ''} ${span.model ?? ''} ${span.id}`}
+                  onSelect={() => handlePaletteSelect(span.id)}
+                >
+                  {display.tagLabel && (
+                    <span className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium ${display.tagCls}`}>
+                      {display.tagLabel}
+                    </span>
+                  )}
+                  <span className="min-w-0 flex-1 truncate">{display.name}</span>
+                  {parentName && (
+                    <span className="ml-auto shrink-0 truncate text-[11px] text-muted-foreground">in {parentName}</span>
+                  )}
+                </CommandItem>
+              ))}
+            </CommandGroup>
+          </CommandList>
+        </Command>
+      </CommandDialog>
+    </>
   )
 }
 
@@ -166,7 +244,7 @@ function SpanTreeRow({ row, selected, onSelect, onToggleCollapse }: SpanTreeRowP
   const showCount = childCount > 1
 
   return (
-    <li>
+    <li data-span-id={span.id}>
       <div
         className={[
           'relative flex min-h-10 w-full cursor-pointer items-stretch pl-2 text-left text-xs',
@@ -232,7 +310,7 @@ function SpanTreeRow({ row, selected, onSelect, onToggleCollapse }: SpanTreeRowP
         <button
           type="button"
           onClick={onSelect}
-          className="flex min-w-0 flex-1 flex-col justify-center gap-0.5 py-1.5 pr-2 pl-1 text-left leading-tight focus:outline-hidden focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/80"
+          className="flex min-w-0 flex-1 flex-col justify-center gap-0.5 py-1 pr-2 pl-1 text-left leading-tight focus:outline-hidden focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/80"
         >
           <div className="flex min-w-0 items-center gap-2">
             {display.tagLabel && (
@@ -283,7 +361,7 @@ export function DetailPanel({ span, spans }: { span: Span; spans?: Span[] }) {
             {display.tagLabel}
           </span>
         )}
-        <span className="truncate text-sm font-semibold text-foreground">{display.name}</span>
+        <span className="truncate text-base font-semibold text-foreground">{display.name}</span>
       </div>
 
       <dl className="grid min-w-0 grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-1 text-xs">
@@ -311,7 +389,7 @@ export function DetailPanel({ span, spans }: { span: Span; spans?: Span[] }) {
       {span.inputParams && <JsonBlock label="Input" raw={span.inputParams} />}
       {span.toolResult != null && <JsonBlock label="Result" value={span.toolResult} />}
       {(span.llmInput != null || span.llmOutput != null) && (
-        <MessagesBlock input={span.llmInput} output={span.llmOutput} spans={spans} />
+        <MessagesBlock input={span.llmInput} output={span.llmOutput} outputType={span.outputType} spans={spans} />
       )}
 
       {(span.responseId || span.systemFingerprint) && (
@@ -329,12 +407,23 @@ export function DetailPanel({ span, spans }: { span: Span; spans?: Span[] }) {
   )
 }
 
-function MessagesBlock({ input, output, spans }: { input?: JsonValue; output?: JsonValue; spans?: Span[] }) {
+function MessagesBlock({
+  input,
+  output,
+  outputType,
+  spans,
+}: {
+  input?: JsonValue
+  output?: JsonValue
+  outputType?: string
+  spans?: Span[]
+}) {
   const inputMsgs = asMessages(input)
   const outputMsgs = asMessages(output)
   // Tool results live on the sibling execute_tool span — asMessages drops
   // tool-role messages — so we splice them back in keyed by tool_call id.
   const callResolutions = useMemo(() => (spans ? resolveToolCalls(spans) : new Map()), [spans])
+  const structured = outputType && outputType !== 'text' ? outputType : undefined
 
   // If parser produced nothing usable, fall back to raw JSON so we don't hide data.
   if (inputMsgs.length === 0 && outputMsgs.length === 0) {
@@ -354,8 +443,14 @@ function MessagesBlock({ input, output, spans }: { input?: JsonValue; output?: J
           <MessageCard key={`in-${i}`} msg={msg} callResolutions={callResolutions} />
         ))}
         {outputMsgs.map((msg, i) => (
-          // biome-ignore lint/suspicious/noArrayIndexKey: message positions are stable for a frozen span
-          <MessageCard key={`out-${i}`} msg={msg} response callResolutions={callResolutions} />
+          <MessageCard
+            // biome-ignore lint/suspicious/noArrayIndexKey: message positions are stable for a frozen span
+            key={`out-${i}`}
+            msg={msg}
+            response
+            structured={structured}
+            callResolutions={callResolutions}
+          />
         ))}
       </div>
     </section>
@@ -384,23 +479,38 @@ const TOOL_CALL_TONES = {
 function MessageCard({
   msg,
   response,
+  structured,
   callResolutions,
 }: {
   msg: ChatMessage
   response?: boolean
+  structured?: string
   callResolutions: Map<string, ToolCallResolution>
 }) {
   const style = ROLE_STYLES[msg.role]
+  const isStructured = Boolean(response && structured)
+  const ring = isStructured ? 'ring-slate-500/30 dark:ring-slate-400/25' : style.ring
   return (
-    <div className={`min-w-0 rounded-md bg-card px-3 py-2 ring-1 ${style.ring}`}>
+    <div className={`min-w-0 rounded-md bg-card px-3 py-2 ring-1 ${ring}`}>
       <div className="mb-1.5 flex items-center gap-2 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-        <span>{style.label}</span>
-        {response && <span className="text-muted-foreground/70">· response</span>}
+        {isStructured ? (
+          <>
+            <span>Structured output</span>
+            <span className="rounded bg-slate-500/15 px-1.5 py-0.5 text-[10px] font-medium text-slate-700 dark:text-slate-300">
+              {structured}
+            </span>
+          </>
+        ) : (
+          <>
+            <span>{style.label}</span>
+            {response && <span className="text-muted-foreground/70">· response</span>}
+          </>
+        )}
       </div>
       <div className="space-y-2">
         {msg.parts.map((part, i) => (
           // biome-ignore lint/suspicious/noArrayIndexKey: part positions are stable for a frozen message
-          <MessagePartView key={i} part={part} callResolutions={callResolutions} />
+          <MessagePartView key={i} part={part} structured={isStructured} callResolutions={callResolutions} />
         ))}
       </div>
     </div>
@@ -409,15 +519,16 @@ function MessageCard({
 
 function MessagePartView({
   part,
+  structured,
   callResolutions,
 }: {
   part: MessagePart
+  structured?: boolean
   callResolutions: Map<string, ToolCallResolution>
 }) {
   if (part.kind === 'text') {
-    return (
-      <pre className="whitespace-pre-wrap break-words text-[11px] leading-relaxed text-foreground">{part.content}</pre>
-    )
+    if (structured) return <StructuredText content={part.content} />
+    return <pre className="whitespace-pre-wrap break-words text-xs leading-relaxed text-foreground">{part.content}</pre>
   }
   if (part.kind === 'tool_call') {
     const resolved = callResolutions.get(part.id)
@@ -444,14 +555,14 @@ function MessagePartView({
           </span>
         </div>
         {part.arguments != null && (
-          <pre className="mt-1.5 max-h-60 overflow-auto whitespace-pre-wrap break-words text-[11px] leading-snug text-foreground">
+          <pre className="mt-1.5 max-h-60 overflow-auto whitespace-pre-wrap break-words text-xs leading-snug text-foreground">
             {formatJson(part.arguments)}
           </pre>
         )}
         {hasResult && (
           <div className="mt-1.5 border-border border-t pt-1.5">
-            <div className="mb-1 text-[10px] uppercase tracking-wide text-muted-foreground">Result</div>
-            <pre className="max-h-60 overflow-auto whitespace-pre-wrap break-words text-[11px] leading-snug text-foreground">
+            <div className="mb-1 text-[11px] uppercase tracking-wide text-muted-foreground">Result</div>
+            <pre className="max-h-60 overflow-auto whitespace-pre-wrap break-words text-xs leading-snug text-foreground">
               {formatJson(resolved.result)}
             </pre>
           </div>
@@ -460,8 +571,35 @@ function MessagePartView({
     )
   }
   return (
-    <pre className="whitespace-pre-wrap break-words text-[11px] leading-snug text-foreground">
+    <pre className="whitespace-pre-wrap break-words text-xs leading-snug text-foreground">
       {formatJson(part.response)}
+    </pre>
+  )
+}
+
+function StructuredText({ content }: { content: string }) {
+  const parsed = (() => {
+    try {
+      return JSON.parse(content) as unknown
+    } catch {
+      return undefined
+    }
+  })()
+  if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+    const entries = Object.entries(parsed as Record<string, unknown>)
+    if (entries.length === 1 && typeof entries[0][1] === 'string') {
+      const [key, value] = entries[0]
+      return (
+        <div className="flex flex-wrap items-baseline gap-1.5">
+          <span className="rounded bg-muted px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">{key}</span>
+          <span className="text-xs leading-relaxed text-foreground">{value}</span>
+        </div>
+      )
+    }
+  }
+  return (
+    <pre className="whitespace-pre-wrap break-words text-xs leading-snug text-foreground">
+      {parsed !== undefined ? formatJson(parsed) : content}
     </pre>
   )
 }
@@ -470,7 +608,7 @@ function RoleBlock({ content }: { content: string }) {
   return (
     <details open className="rounded-lg bg-muted ring-1 ring-border">
       <summary className="cursor-pointer px-3 py-2 text-xs font-medium text-foreground">Role</summary>
-      <pre className="max-h-[28rem] overflow-auto whitespace-pre-wrap break-words border-border border-t px-3 py-2 text-[11px] leading-relaxed text-foreground">
+      <pre className="max-h-[28rem] overflow-auto whitespace-pre-wrap break-words border-border border-t px-3 py-2 text-xs leading-relaxed text-foreground">
         {content}
       </pre>
     </details>
@@ -506,8 +644,8 @@ function JsonBlock({ label, value, raw }: { label: string; value?: unknown; raw?
     })()
   return (
     <div className="min-w-0 max-w-full">
-      <div className="mb-1 text-[10px] uppercase tracking-wide text-muted-foreground">{label}</div>
-      <pre className="max-h-96 max-w-full overflow-auto whitespace-pre-wrap break-words rounded-md bg-muted p-2 text-[11px] leading-snug text-foreground ring-1 ring-border">
+      <div className="mb-1 text-[11px] uppercase tracking-wide text-muted-foreground">{label}</div>
+      <pre className="max-h-96 max-w-full overflow-auto whitespace-pre-wrap break-words rounded-md bg-muted p-2 text-xs leading-snug text-foreground ring-1 ring-border">
         {text}
       </pre>
     </div>

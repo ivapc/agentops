@@ -1,16 +1,17 @@
+import { Clock01Icon } from '@hugeicons/core-free-icons'
+import { HugeiconsIcon } from '@hugeicons/react'
 import type { ColumnDef } from '@tanstack/react-table'
 import { DataTableColumnHeader } from '#/components/data-table-column-header'
 import { Badge } from '#/components/ui/badge'
-import { formatAgo, formatCost, formatTokens, truncateId } from '#/lib/format'
+import { formatAgo, formatCost, formatDuration, formatTokens, metricTone, truncateId } from '#/lib/format'
 import type { SessionSummary } from '#/lib/telemetry'
 
 function userPrimary(s: SessionSummary): string {
-  return s.userName ?? s.userId ?? s.host ?? '—'
+  return s.userId ?? '—'
 }
 
 function userSecondary(s: SessionSummary): string | undefined {
-  if (s.userName) return s.userId ?? s.host
-  if (s.userId) return s.host
+  if (s.userName && s.userId) return s.userName
   return undefined
 }
 
@@ -19,15 +20,11 @@ export const sessionColumns: ColumnDef<SessionSummary>[] = [
     accessorKey: 'status',
     accessorFn: (s) => (s.hasError ? 'error' : 'ok'),
     header: () => null,
-    cell: ({ row }) =>
-      row.original.hasError ? (
-        <Badge variant="outline" className="px-1.5 text-muted-foreground">
-          Error
-        </Badge>
-      ) : null,
+    cell: () => null,
     filterFn: (row, _id, value: string[]) =>
       Array.isArray(value) && value.includes(row.original.hasError ? 'error' : 'ok'),
     enableSorting: false,
+    enableHiding: false,
   },
   {
     accessorKey: 'lastSeenMs',
@@ -61,6 +58,11 @@ export const sessionColumns: ColumnDef<SessionSummary>[] = [
           ) : (
             <span className="font-mono text-[11px] text-muted-foreground">{idLabel}</span>
           )}
+          {s.hasError ? (
+            <Badge variant="outline" className="shrink-0 px-1.5 text-muted-foreground">
+              Error
+            </Badge>
+          ) : null}
         </div>
       )
     },
@@ -117,6 +119,22 @@ export const sessionColumns: ColumnDef<SessionSummary>[] = [
     },
   },
   {
+    id: 'duration',
+    accessorFn: (s) => Math.max(0, s.lastSeenMs - s.startedAtMs),
+    header: ({ column }) => <DataTableColumnHeader column={column} title="Duration" className="justify-end" />,
+    cell: ({ row }) => {
+      const ms = Math.max(0, row.original.lastSeenMs - row.original.startedAtMs)
+      return (
+        <div
+          className={`flex items-center justify-end gap-1 tabular-nums ${metricTone('duration', ms, 'text-muted-foreground')}`}
+        >
+          <HugeiconsIcon icon={Clock01Icon} strokeWidth={2} className="size-3.5 opacity-80" />
+          {formatDuration(ms)}
+        </div>
+      )
+    },
+  },
+  {
     accessorKey: 'totalTokens',
     header: ({ column }) => <DataTableColumnHeader column={column} title="Tokens" className="justify-end" />,
     cell: ({ row }) => (
@@ -126,9 +144,14 @@ export const sessionColumns: ColumnDef<SessionSummary>[] = [
   {
     accessorKey: 'totalCostUsd',
     header: ({ column }) => <DataTableColumnHeader column={column} title="Cost" className="justify-end" />,
-    cell: ({ row }) => (
-      <div className="text-right tabular-nums text-muted-foreground">{formatCost(row.original.totalCostUsd ?? 0)}</div>
-    ),
+    cell: ({ row }) => {
+      const value = row.original.totalCostUsd ?? 0
+      return (
+        <div className={`text-right tabular-nums ${metricTone('cost', value, 'text-muted-foreground')}`}>
+          {formatCost(value)}
+        </div>
+      )
+    },
   },
   {
     accessorKey: 'traceCount',

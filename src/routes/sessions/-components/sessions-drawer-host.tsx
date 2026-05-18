@@ -3,9 +3,8 @@ import { useEffect, useState } from 'react'
 import {
   AUTO_REFRESH_MS,
   type AutoRefreshInterval,
-  DEFAULT_AUTO_REFRESH_INTERVAL,
+  DRAWER_DEFAULT_AUTO_REFRESH_INTERVAL,
 } from '#/components/auto-refresh-select'
-import { truncateId } from '#/lib/format'
 import type { Span } from '#/lib/spans'
 import type { TimeRange } from '#/lib/time-range'
 import { sessionQuery } from '../-data'
@@ -30,7 +29,7 @@ export function SessionsDrawerHost({ previewSessionId, range, onClose }: Session
   const open = previewSessionId !== null
   const queryId = previewSessionId ?? SESSION_DRAWER_PLACEHOLDER
 
-  const [autoRefresh, setAutoRefresh] = useState<AutoRefreshInterval>(DEFAULT_AUTO_REFRESH_INTERVAL)
+  const [autoRefresh, setAutoRefresh] = useState<AutoRefreshInterval>(DRAWER_DEFAULT_AUTO_REFRESH_INTERVAL)
   const { data, isLoading, isFetching, refetch } = useQuery({
     ...sessionQuery(queryId, range),
     enabled: open,
@@ -61,7 +60,7 @@ export function SessionsDrawerHost({ previewSessionId, range, onClose }: Session
       inspectSessionKey={displayPreview?.sessionId ?? null}
       spans={displayPreview?.spans ?? []}
       loading={open ? isLoading : false}
-      title={displayPreview ? truncateId(displayPreview.sessionId) : undefined}
+      title={displayPreview?.sessionId}
       expandSession={displayPreview ? { sessionId: displayPreview.sessionId, range } : undefined}
       autoRefresh={autoRefresh}
       onAutoRefreshChange={setAutoRefresh}
