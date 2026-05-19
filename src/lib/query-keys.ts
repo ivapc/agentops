@@ -1,14 +1,15 @@
 export const queryKeys = {
   sessions: {
     all: () => ['sessions'] as const,
-    window: (range: string) => ['sessions', { range }] as const,
+    window: (range: string, userId = '') => ['sessions', userId, { range }] as const,
     currentUserWindow: (range: string, userId: string) => ['sessions', 'current-user', userId, { range }] as const,
     detail: (id: string) => ['sessions', id] as const,
     detailWindow: (id: string, range: string) => ['sessions', id, { range }] as const,
   },
-  runs: {
-    all: () => ['runs'] as const,
-    detail: (id: string) => ['runs', id] as const,
+  traces: {
+    all: () => ['traces'] as const,
+    window: (range: string, userId = '') => ['traces', userId, { range }] as const,
+    detail: (id: string) => ['traces', id] as const,
   },
   inbox: {
     all: () => ['inbox'] as const,

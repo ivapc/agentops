@@ -13,42 +13,42 @@ import {
   BreadcrumbSeparator,
 } from '#/components/ui/breadcrumb'
 import type { Span } from '#/lib/spans'
-import { RUN_SPANS, runSpansQuery } from './-data'
+import { traceSpansQuery } from './-data'
 
-export const Route = createFileRoute('/runs/$runId')({
-  loader: ({ context, params }) => context.queryClient.ensureQueryData(runSpansQuery(params.runId)),
-  component: RunDetail,
+export const Route = createFileRoute('/traces/$traceId')({
+  loader: ({ context, params }) => context.queryClient.ensureQueryData(traceSpansQuery(params.traceId)),
+  component: TraceDetail,
 })
 
-function RunDetail() {
-  const { runId } = Route.useParams()
-  const { data: loaderData } = useQuery(runSpansQuery(runId))
+function TraceDetail() {
+  const { traceId } = Route.useParams()
+  const { data: loaderData } = useQuery(traceSpansQuery(traceId))
 
-  const spans: Span[] = loaderData?.spans ?? RUN_SPANS
+  const spans: Span[] = loaderData?.spans ?? []
   const provider = loaderData?.provider
   const fingerprint = loaderData?.fingerprint
   const truncated = loaderData?.truncated
 
-  const total = Math.max(...spans.map((s) => s.endMs)) - Math.min(...spans.map((s) => s.startMs))
+  const total = spans.length > 0 ? Math.max(...spans.map((s) => s.endMs)) - Math.min(...spans.map((s) => s.startMs)) : 0
 
   return (
     <div className="flex h-full flex-col">
       <SiteHeader
         title={
           <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-            <h1 className="sr-only">Run #{runId}</h1>
+            <h1 className="sr-only">Trace {traceId}</h1>
             <Breadcrumb>
               <BreadcrumbList>
                 <BreadcrumbItem>
                   <BreadcrumbLink asChild>
-                    <Link to="/runs" search={(prev) => prev}>
-                      Runs
+                    <Link to="/traces" search={(prev) => prev}>
+                      Traces
                     </Link>
                   </BreadcrumbLink>
                 </BreadcrumbItem>
                 <BreadcrumbSeparator />
                 <BreadcrumbItem>
-                  <BreadcrumbPage>Run #{runId}</BreadcrumbPage>
+                  <BreadcrumbPage>{traceId}</BreadcrumbPage>
                 </BreadcrumbItem>
               </BreadcrumbList>
             </Breadcrumb>
@@ -60,15 +60,21 @@ function RunDetail() {
                 via {provider} · {fingerprint}
               </Badge>
             ) : !provider ? (
-              <Badge variant="warning">demo data</Badge>
+              <Badge variant="warning">no data</Badge>
             ) : null}
             {truncated && <Badge variant="destructive">truncated</Badge>}
           </div>
         }
-        actions={<ContextWindow spans={spans} />}
+        actions={spans.length > 0 ? <ContextWindow spans={spans} /> : undefined}
       />
       <section className="min-h-0 flex-1">
-        <ConversationView spans={spans} onSelect={() => {}} />
+        {spans.length > 0 ? (
+          <ConversationView spans={spans} onSelect={() => {}} />
+        ) : (
+          <div className="flex h-full items-center justify-center text-muted-foreground">
+            No spans found for this trace.
+          </div>
+        )}
       </section>
     </div>
   )

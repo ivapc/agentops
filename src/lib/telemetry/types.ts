@@ -17,7 +17,9 @@ export interface ListOpts extends WindowOpts {
 export type TraceFetch = { spans: Span[]; truncated?: boolean } | null
 
 export type GetTraceOpts = WindowOpts & IdentityFilter
-export type ListTracesOpts = ListOpts
+export type ListTracesOpts = ListOpts & IdentityFilter
+
+export type TraceCategory = 'chat' | 'sub-agent' | 'scheduled' | 'webhook' | 'background' | 'utility' | 'orphan'
 
 export interface TraceSummary {
   id: string
@@ -32,6 +34,18 @@ export interface TraceSummary {
   totalTokens?: number
   totalCostUsd?: number
   hasError?: boolean
+  category?: TraceCategory
+  // Raw producer attributes, kept so the UI can show a secondary chip
+  // (e.g. llm_purpose=title_generation under category=utility).
+  triggerType?: string
+  execution?: string
+  llmPurpose?: string
+  hasSessionAttribute?: boolean
+  // Root operation name (first non-http span or fallback to first span name).
+  rootOperation?: string
+  // User identity if present on the trace (lifted from user.id / user.name attrs).
+  userId?: string
+  userName?: string
 }
 
 // A session is the spine of a multi-turn conversation per
@@ -48,6 +62,8 @@ export interface SessionSummary {
   source: 'attribute' | 'trace'
   startedAtMs: number
   lastSeenMs: number
+  /** Sum of per-trace durations (actual compute time, not wall-clock gap between first and last span). */
+  activeDurationMs: number
   traceCount: number
   agents: string[]
   firstInput?: string
@@ -69,7 +85,7 @@ export interface InventoryObservation {
   traceId?: string
 }
 
-export type LatencyKind = 'generation' | 'observation'
+export type LatencyKind = 'chat' | 'agent'
 
 export interface LatencyRow {
   name: string
@@ -99,20 +115,25 @@ export interface ToolPayloadRow {
   sampleTraceId?: string
 }
 
-// 24-bucket time series for one tool, used to render an inline sparkline next
-// to the aggregate row. Buckets are aligned to the user's selected window;
-// missing buckets are zero-filled by the consumer.
-export interface ToolBucketPoint {
-  ts: number
-  value: number
-}
-
-export interface ToolSpark {
-  name: string
-  buckets: ToolBucketPoint[]
-}
-
 export type TopOpts = ListOpts
+
+export interface LatencyPoint {
+  ts: number
+  p50Ms: number
+  p95Ms: number
+  count: number
+}
+
+export interface CacheHitPoint {
+  ts: number
+  ratio: number
+  inputTokens: number
+}
+
+export interface RunsPoint {
+  ts: number
+  runs: number
+}
 
 export interface OverviewAggregate {
   runs: number
@@ -131,47 +152,28 @@ export type SessionFetch = {
   title?: string
 } | null
 
-export interface TelemetryProvider {
-  name: string
+// Span-shape methods stay on the provider — each one's row format is bespoke
+// and intertwined with span normalization. Pure-aggregation features (overview,
+// latency, tool stats, inventory) live in features.ts and dispatch on `name`;
+// the queries are provider-specific (DataFusion-on-OO-schema vs KQL-on-AI-schema),
+// not a shared dialect.
+interface BaseProvider {
   fingerprint: string
-
-  // 'found'     -> chain stops, spans returned
-  // 'not_found' -> definitively no trace by this id; chain tries next provider
-  // throws      -> real error (auth/network); chain logs and continues
   getTrace(traceId: string, opts?: GetTraceOpts): Promise<TraceFetch>
-
-  // Aggregated summary of recent traces. Optional: a provider that only
-  // supports point-lookups returns undefined here and the index page skips it.
   listTraces?(opts?: ListTracesOpts): Promise<TraceSummary[]>
-
-  // Sessions: groups of runs sharing a sessionId (see SessionSummary).
-  // Optional — providers without grouping capability omit these.
-  // `truncated` = the underlying scan hit its row cap, so older sessions
-  // may be missing from the result.
   listSessions?(opts?: ListSessionsOpts): Promise<{ sessions: SessionSummary[]; truncated: boolean }>
   getSession?(sessionId: string, opts?: GetTraceOpts): Promise<SessionFetch>
-  discoverInventory?(kind: InventoryDiscoveryKind, opts?: GetTraceOpts): Promise<InventoryObservation[]>
-
-  // Latency percentiles grouped by operation_name. `generation` filters to
-  // LLM calls; `observation` is the full span set.
-  listLatencyPercentiles?(kind: LatencyKind, opts?: LatencyOpts): Promise<LatencyRow[]>
-
-  // Tools with high error rate — grouped by execute_tool operation_name.
-  listToolErrorRates?(opts?: TopOpts): Promise<ToolErrorRow[]>
-
-  // Tools returning too much — grouped by execute_tool operation_name,
-  // percentiles over output payload char length.
-  listToolPayloadSizes?(opts?: TopOpts): Promise<ToolPayloadRow[]>
-
-  // Bucketed time series of errors-per-tool, for inline sparklines.
-  listToolErrorRatesBucketed?(opts?: TopOpts): Promise<ToolSpark[]>
-
-  // Bucketed time series of avg-output-size-per-tool, for inline sparklines.
-  listToolPayloadSizesBucketed?(opts?: TopOpts): Promise<ToolSpark[]>
-
-  // Single-shot KPIs for the home page hero. Single SQL/KQL when possible.
-  getOverview?(opts?: OverviewOpts): Promise<OverviewAggregate>
-
-  // getLogs?(filter, opts?): Promise<LogEntry[]>
-  // getMetric?(name, range): Promise<MetricSeries>
+  query(q: string, opts: WindowOpts & { size?: number }): Promise<Array<Record<string, unknown>>>
 }
+
+export interface OpenObserveProvider extends BaseProvider {
+  name: 'openobserve'
+  stream: string
+  getKnownColumns(): Promise<ReadonlySet<string>>
+}
+
+export interface AppInsightsProvider extends BaseProvider {
+  name: 'app-insights'
+}
+
+export type TelemetryProvider = OpenObserveProvider | AppInsightsProvider

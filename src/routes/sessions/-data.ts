@@ -5,9 +5,16 @@ import { getSession, listRecentSessions } from '#/lib/telemetry'
 import { DEFAULT, parse, serialize, type TimeRange, windowUs } from '#/lib/time-range'
 
 const fetchSessions = createServerFn({ method: 'GET' })
-  .inputValidator((input: unknown) => parse(input))
+  .inputValidator((input: { range?: unknown; userId?: unknown }) => ({
+    range: parse(input.range),
+    userId: typeof input.userId === 'string' ? input.userId.trim() : '',
+  }))
   .handler(async ({ data }) => {
-    return await listRecentSessions({ limit: 50, ...windowUs(data) })
+    return await listRecentSessions({
+      limit: 50,
+      ...windowUs(data.range),
+      ...(data.userId ? { userId: data.userId } : {}),
+    })
   })
 
 const fetchCurrentUserSessions = createServerFn({ method: 'GET' })
@@ -33,10 +40,10 @@ const fetchSession = createServerFn({ method: 'GET' })
     return await getSession(data.sessionId, windowUs(data.range))
   })
 
-export const sessionsQuery = (range: TimeRange = DEFAULT) =>
+export const sessionsQuery = (range: TimeRange = DEFAULT, userId = '') =>
   queryOptions({
-    queryKey: queryKeys.sessions.window(serialize(range)),
-    queryFn: () => fetchSessions({ data: range }),
+    queryKey: queryKeys.sessions.window(serialize(range), userId),
+    queryFn: () => fetchSessions({ data: { range, userId } }),
   })
 
 export const currentUserSessionsQuery = (range: TimeRange = DEFAULT, userId = '') =>

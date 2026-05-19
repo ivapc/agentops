@@ -48,6 +48,7 @@ export interface Span {
   outputTokens?: number
   costUsd?: number
   agentName?: string
+  agentId?: string
   agentDescription?: string
   toolName?: string
   inputParams?: string
@@ -93,6 +94,14 @@ export interface Span {
   rawAttributes?: Record<string, JsonValue>
 }
 
+// Defend against producer-side exporter retries that ingest the same span_id
+// multiple times. First occurrence wins.
+export function dedupeById(spans: Span[]): Span[] {
+  const seen = new Map<string, Span>()
+  for (const s of spans) if (!seen.has(s.id)) seen.set(s.id, s)
+  return seen.size === spans.length ? spans : [...seen.values()]
+}
+
 // Treat a span as root when its declared parent is not present in the trace.
 // Some providers (OpenObserve) emit the trace id as the root's parent rather
 // than empty — see docs/reference/provider-quirks.md. Applied at the provider
@@ -136,16 +145,40 @@ export function propagateSessionInTrace(spans: Span[]): void {
 // but don't re-stamp them on inner spans — inherit from the nearest ancestor.
 export function propagateInheritedAttrs(spans: Span[]): void {
   const byId = new Map(spans.map((s) => [s.id, s]))
-  for (const s of spans) {
-    if (!s.parentId) continue
-    if (s.operationName && s.agUiRunId) continue
-    let cur: Span | undefined = byId.get(s.parentId)
-    while (cur && (!s.operationName || !s.agUiRunId)) {
-      if (!s.operationName && cur.operationName) s.operationName = cur.operationName
-      if (!s.agUiRunId && cur.agUiRunId) s.agUiRunId = cur.agUiRunId
-      cur = cur.parentId ? byId.get(cur.parentId) : undefined
+  const resolved = new Set<string>()
+  const resolve = (s: Span) => {
+    if (resolved.has(s.id)) return
+    const parent = s.parentId ? byId.get(s.parentId) : undefined
+    if (parent) resolve(parent)
+    if (parent) {
+      if (!s.operationName && parent.operationName) s.operationName = parent.operationName
+      if (!s.agUiRunId && parent.agUiRunId) s.agUiRunId = parent.agUiRunId
     }
+    resolved.add(s.id)
   }
+  for (const s of spans) resolve(s)
+}
+
+// Returns label overrides for invoke_agent spans whose agentName collides
+// with another agentId in the same session. Empty when no collisions.
+export function buildAgentLabels(spans: Span[]): Map<string, string> {
+  const idsByName = new Map<string, Set<string>>()
+  for (const s of spans) {
+    if (s.operation !== 'invoke_agent' || !s.agentName || !s.agentId) continue
+    let ids = idsByName.get(s.agentName)
+    if (!ids) {
+      ids = new Set()
+      idsByName.set(s.agentName, ids)
+    }
+    ids.add(s.agentId)
+  }
+  const out = new Map<string, string>()
+  for (const s of spans) {
+    if (s.operation !== 'invoke_agent' || !s.agentName || !s.agentId) continue
+    if ((idsByName.get(s.agentName)?.size ?? 0) <= 1) continue
+    out.set(s.id, `${s.agentName} · ${s.agentId.slice(0, 8)}`)
+  }
+  return out
 }
 
 // Side-channel LLM calls (title gen, summarization). Explicit signal:
@@ -247,10 +280,4 @@ export function findOrchestratorId(spans: Span[]): string | null {
 // tool" patterns show up in real traces: execute_tool <name> → invoke_agent X.
 export function findWrappedAgent(spans: Span[], toolId: string): Span | undefined {
   return spans.find((s) => s.parentId === toolId && s.operation === 'invoke_agent')
-}
-
-export function formatCost(usd: number): string | null {
-  if (!usd) return null
-  if (usd < 0.0001) return '<0.0001'
-  return usd.toFixed(4)
 }

@@ -4,11 +4,14 @@ import {
   CheckIcon,
   ClipboardIcon,
   CommandLineIcon,
+  ExclamationTriangleIcon,
   InformationCircleIcon,
   MagnifyingGlassIcon,
   TableCellsIcon,
   WrenchScrewdriverIcon,
 } from '@heroicons/react/24/outline'
+import { Loading03Icon } from '@hugeicons/core-free-icons'
+import { HugeiconsIcon } from '@hugeicons/react'
 import { useEffect, useMemo, useState } from 'react'
 import { contextWindowFor, formatTokens } from '#/components/context-window'
 import { IconTabs } from '#/components/icon-tabs'
@@ -21,15 +24,17 @@ import { ScrollArea } from '#/components/ui/scroll-area'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '#/components/ui/table'
 import { useBreakdowns } from '#/hooks/use-breakdowns'
 import { useIsMobile } from '#/hooks/use-mobile'
+import { formatCost } from '#/lib/format'
 import {
+  buildAgentLabels,
   descendantSpans,
   findOrchestratorIds,
-  formatCost,
   type Span,
   spanHasError,
   subagentChatSpans,
 } from '#/lib/spans'
 import { extractTurns, type Turn, turnTotals } from '#/lib/turns'
+import { cn } from '#/lib/utils'
 import { ContextTools, collectFrontendTools, collectToolGroups } from './context'
 import { displayFor, formatDuration } from './shared'
 import { DetailPanel, SpanTreeList } from './tree'
@@ -74,11 +79,11 @@ export function SessionInspectLayout({
       className="flex h-full min-h-0 min-w-0 flex-1"
     >
       <ResizablePanel id="tree" defaultSize="33%" minSize="20%" maxSize="60%">
-        <section className="h-full">
+        <section className="h-full overflow-hidden">
           <ScrollArea className="h-full">
             {loading && spans.length === 0 ? (
-              <div className="flex h-full items-center justify-center text-xs text-muted-foreground/70">
-                Loading spans…
+              <div className="flex h-full items-center justify-center py-12 text-xs text-muted-foreground/70">
+                <HugeiconsIcon icon={Loading03Icon} strokeWidth={2} className="size-3.5 animate-spin" />
               </div>
             ) : (
               <SpanTreeList
@@ -97,7 +102,9 @@ export function SessionInspectLayout({
       <ResizablePanel id="inspector" defaultSize="67%" minSize="40%">
         <section className="flex h-full min-h-0 min-w-0 flex-col">
           {loading && spans.length === 0 ? (
-            <div className="flex flex-1 items-center justify-center text-xs text-muted-foreground/70">Loading…</div>
+            <div className="flex flex-1 items-center justify-center text-xs text-muted-foreground/70">
+              <HugeiconsIcon icon={Loading03Icon} strokeWidth={2} className="size-3.5 animate-spin" />
+            </div>
           ) : (
             <ResizablePanelGroup orientation="vertical" className="flex h-full w-full">
               <ResizablePanel id="overview" defaultSize="28%" minSize="15%">
@@ -153,6 +160,7 @@ function SessionTools({ spans, selectedSpan }: { spans: Span[]; selectedSpan: Sp
   // span list and passed in even when the visible groups are scoped to a
   // single agent.
   const frontendNames = useMemo(() => new Set(collectFrontendTools(spans).map((t) => t.name)), [spans])
+  const agentLabels = useMemo(() => buildAgentLabels(spans), [spans])
 
   const groups = useMemo(() => {
     const scope = selectedSpan
@@ -173,12 +181,9 @@ function SessionTools({ spans, selectedSpan }: { spans: Span[]; selectedSpan: Sp
     return { count, tokens }
   }, [groups])
 
-  const scopeLabel =
-    selectedSpan?.operation === 'invoke_agent'
-      ? (selectedSpan.agentName ?? selectedSpan.name)
-      : selectedSpan
-        ? displayFor(selectedSpan).name
-        : 'All agents'
+  const scopeLabel = selectedSpan
+    ? (agentLabels.get(selectedSpan.id) ?? displayFor(selectedSpan, agentLabels).name)
+    : 'All agents'
 
   return (
     <div className="px-4 py-4">
@@ -245,7 +250,10 @@ function SessionOverview({ spans }: { spans: Span[] }) {
   const chatSpans = useMemo(() => turns.flatMap((turn) => turn.chats), [turns])
   const { ready, total } = useBreakdowns(chatSpans)
   const orchestrator = orchestratorIds[0] ? spans.find((span) => span.id === orchestratorIds[0]) : undefined
-  const agent = orchestrator?.agentName ?? orchestrator?.name ?? 'Session'
+  const agentLabels = useMemo(() => buildAgentLabels(spans), [spans])
+  const agent = orchestrator
+    ? (agentLabels.get(orchestrator.id) ?? orchestrator.agentName ?? orchestrator.name)
+    : 'Session'
 
   const totals = useMemo(() => {
     let input = 0
@@ -291,7 +299,6 @@ function SessionOverview({ spans }: { spans: Span[] }) {
   const allTokens = inputTokens + outputTokens + subagent.tokens
   const cachePct = inputTokens > 0 ? Math.round((cachedTokens / inputTokens) * 100) : 0
   const totalCost = totals.cost + subagent.cost
-  const costStr = formatCost(totalCost) ?? ''
 
   const peakIn = peak?.inputTokens ?? 0
   const peakWindow = contextWindowFor(peak?.model)
@@ -331,7 +338,7 @@ function SessionOverview({ spans }: { spans: Span[] }) {
           </span>
           <span className="text-muted-foreground/60">·</span>
           <span className="text-foreground">
-            <span className="font-semibold">{costStr ? `$${costStr}` : '—'}</span>
+            <span className="font-semibold">{formatCost(totalCost)}</span>
           </span>
           <span className="text-muted-foreground/60">·</span>
           <span className={totals.errors > 0 ? 'text-destructive' : 'text-muted-foreground'}>
@@ -448,20 +455,24 @@ function AttrRow({ attrKey, value }: { attrKey: string; value: unknown }) {
   const formatted = formatAttrValue(value)
   const isLong = formatted.length > ATTR_PREVIEW_LIMIT || formatted.includes('\n')
   const [expanded, setExpanded] = useState(false)
-  const [copied, setCopied] = useState(false)
+  const [copyState, setCopyState] = useState<'idle' | 'copied' | 'failed'>('idle')
 
   useEffect(() => {
-    if (!copied) return
-    const t = window.setTimeout(() => setCopied(false), 1200)
+    if (copyState === 'idle') return
+    const t = window.setTimeout(() => setCopyState('idle'), 1200)
     return () => window.clearTimeout(t)
-  }, [copied])
+  }, [copyState])
 
   const copy = async () => {
     try {
       await navigator.clipboard.writeText(formatted)
-      setCopied(true)
-    } catch {}
+      setCopyState('copied')
+    } catch {
+      setCopyState('failed')
+    }
   }
+  const copied = copyState === 'copied'
+  const failed = copyState === 'failed'
 
   return (
     <TableRow className="group align-top">
@@ -499,12 +510,16 @@ function AttrRow({ attrKey, value }: { attrKey: string; value: unknown }) {
           <Button
             variant="ghost"
             size="icon-sm"
-            className="shrink-0 opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
-            aria-label={copied ? 'Copied' : `Copy ${attrKey}`}
-            title={copied ? 'Copied' : 'Copy value'}
+            className={cn(
+              'shrink-0 transition-opacity focus-visible:opacity-100',
+              copyState === 'idle' ? 'opacity-0 group-hover:opacity-100' : 'opacity-100',
+              failed && 'text-destructive',
+            )}
+            aria-label={copied ? 'Copied' : failed ? 'Copy failed' : `Copy ${attrKey}`}
+            title={copied ? 'Copied' : failed ? 'Copy failed — clipboard unavailable' : 'Copy value'}
             onClick={copy}
           >
-            {copied ? <CheckIcon /> : <ClipboardIcon />}
+            {copied ? <CheckIcon /> : failed ? <ExclamationTriangleIcon /> : <ClipboardIcon />}
           </Button>
         </div>
       </TableCell>
@@ -526,6 +541,7 @@ function formatAttrValue(v: unknown): string {
 function SessionTurnsPanel({ spans }: { spans: Span[] }) {
   const orchestratorIds = useMemo(() => findOrchestratorIds(spans), [spans])
   const turns = useMemo(() => extractTurns(spans, orchestratorIds), [spans, orchestratorIds])
+  const agentLabels = useMemo(() => buildAgentLabels(spans), [spans])
   const errorCount = useMemo(
     () => turns.reduce((sum, turn) => sum + turn.actions.filter(spanHasError).length, 0),
     [turns],
@@ -567,7 +583,7 @@ function SessionTurnsPanel({ spans }: { spans: Span[] }) {
           </TableHeader>
           <TableBody>
             {turns.map((turn, index) => (
-              <SessionTurnRow key={turn.run.id} turn={turn} index={index + 1} />
+              <SessionTurnRow key={turn.run.id} turn={turn} index={index + 1} agentLabels={agentLabels} />
             ))}
           </TableBody>
         </Table>
@@ -665,14 +681,21 @@ function ContextBreakdown({
   )
 }
 
-function SessionTurnRow({ turn, index }: { turn: Turn; index: number }) {
+function SessionTurnRow({
+  turn,
+  index,
+  agentLabels,
+}: {
+  turn: Turn
+  index: number
+  agentLabels?: Map<string, string>
+}) {
   const { run, chats, actions } = turn
   const errors = actions.filter(spanHasError).length
   const totals = turnTotals(turn)
   const tokenTotal = totals.inputTokens + totals.outputTokens
   const cachePct = totals.inputTokens > 0 ? Math.round((totals.cachedTokens / totals.inputTokens) * 100) : 0
-  const cost = formatCost(totals.costUsd)
-  const modelLabel = totals.model ?? run.agentName ?? run.name
+  const modelLabel = totals.model ?? agentLabels?.get(run.id) ?? run.agentName ?? run.name
 
   return (
     <TableRow>
@@ -696,7 +719,7 @@ function SessionTurnRow({ turn, index }: { turn: Turn; index: number }) {
           </span>
         )}
       </TableCell>
-      <TableCell className="py-1.5 text-right tabular-nums text-foreground">{cost ? `$${cost}` : '—'}</TableCell>
+      <TableCell className="py-1.5 text-right tabular-nums text-foreground">{formatCost(totals.costUsd)}</TableCell>
     </TableRow>
   )
 }

@@ -1,25 +1,29 @@
 import { getCookie } from '@tanstack/react-start/server'
 import type { Span } from '#/lib/spans'
+import * as analytics from './analytics'
 import { createAppInsightsProvider } from './app-insights'
 import { createOpenObserveProvider } from './openobserve'
 import type {
+  CacheHitPoint,
   GetTraceOpts,
   InventoryDiscoveryKind,
   InventoryObservation,
   LatencyKind,
   LatencyOpts,
+  LatencyPoint,
   LatencyRow,
   ListSessionsOpts,
   ListTracesOpts,
   OverviewAggregate,
   OverviewOpts,
+  RunsPoint,
   SessionSummary,
   TelemetryProvider,
   ToolErrorRow,
   ToolPayloadRow,
-  ToolSpark,
   TopOpts,
   TraceSummary,
+  WindowOpts,
 } from './types'
 
 export type * from './types'
@@ -49,11 +53,15 @@ function buildProvider(id: ProviderId): TelemetryProvider {
       password: process.env.OO_PASS ?? 'Complexpass#123',
     })
   }
-  // app-insights
+  // app-insights — prefer resource ID (SDK + Azure AD), fall back to API key
+  const resourceId = process.env.APPLICATIONINSIGHTS_RESOURCE_ID
+  if (resourceId) return createAppInsightsProvider({ resourceId })
   const appId = process.env.APPLICATIONINSIGHTS_APP_ID ?? process.env.AI_APP_ID
   const apiKey = process.env.APPLICATIONINSIGHTS_API_KEY ?? process.env.AI_API_KEY
   if (!appId || !apiKey) {
-    throw new Error('app-insights provider requires APPLICATIONINSIGHTS_APP_ID and APPLICATIONINSIGHTS_API_KEY')
+    throw new Error(
+      'app-insights provider requires APPLICATIONINSIGHTS_RESOURCE_ID or both APPLICATIONINSIGHTS_APP_ID + APPLICATIONINSIGHTS_API_KEY',
+    )
   }
   return createAppInsightsProvider({ appId, apiKey })
 }
@@ -70,12 +78,13 @@ function getProvider(id: ProviderId): TelemetryProvider {
 export function listProviderStatus(): ProviderStatus[] {
   const oo: ProviderStatus = { id: 'openobserve', label: 'OpenObserve', configured: true }
   const ai: ProviderStatus = { id: 'app-insights', label: 'Application Insights', configured: true }
-  const missing: string[] = []
-  if (!(process.env.APPLICATIONINSIGHTS_APP_ID ?? process.env.AI_APP_ID)) missing.push('APPLICATIONINSIGHTS_APP_ID')
-  if (!(process.env.APPLICATIONINSIGHTS_API_KEY ?? process.env.AI_API_KEY)) missing.push('APPLICATIONINSIGHTS_API_KEY')
-  if (missing.length) {
+  const hasResourceId = !!process.env.APPLICATIONINSIGHTS_RESOURCE_ID
+  const hasApiKey =
+    !!(process.env.APPLICATIONINSIGHTS_APP_ID ?? process.env.AI_APP_ID) &&
+    !!(process.env.APPLICATIONINSIGHTS_API_KEY ?? process.env.AI_API_KEY)
+  if (!hasResourceId && !hasApiKey) {
     ai.configured = false
-    ai.missing = missing
+    ai.missing = ['APPLICATIONINSIGHTS_RESOURCE_ID or APPLICATIONINSIGHTS_APP_ID+API_KEY']
   }
   return [oo, ai]
 }
@@ -169,43 +178,33 @@ export async function discoverInventory(
   kind: InventoryDiscoveryKind,
   opts?: { fromUs?: number; toUs?: number },
 ): Promise<InventoryObservation[]> {
-  const p = getActiveProvider()
-  if (!p.discoverInventory) return []
-  return await p.discoverInventory(kind, opts)
+  return analytics.fetchInventory(getActiveProvider(), kind, opts)
 }
 
 export async function listLatencyPercentiles(kind: LatencyKind, opts?: LatencyOpts): Promise<LatencyRow[]> {
-  const p = getActiveProvider()
-  if (!p.listLatencyPercentiles) return []
-  return await p.listLatencyPercentiles(kind, opts)
+  return analytics.fetchLatencyPercentiles(getActiveProvider(), kind, opts)
 }
 
 export async function listToolErrorRates(opts?: TopOpts): Promise<ToolErrorRow[]> {
-  const p = getActiveProvider()
-  if (!p.listToolErrorRates) return []
-  return await p.listToolErrorRates(opts)
+  return analytics.fetchToolErrorRates(getActiveProvider(), opts)
 }
 
 export async function listToolPayloadSizes(opts?: TopOpts): Promise<ToolPayloadRow[]> {
-  const p = getActiveProvider()
-  if (!p.listToolPayloadSizes) return []
-  return await p.listToolPayloadSizes(opts)
-}
-
-export async function listToolErrorRatesBucketed(opts?: TopOpts): Promise<ToolSpark[]> {
-  const p = getActiveProvider()
-  if (!p.listToolErrorRatesBucketed) return []
-  return await p.listToolErrorRatesBucketed(opts)
-}
-
-export async function listToolPayloadSizesBucketed(opts?: TopOpts): Promise<ToolSpark[]> {
-  const p = getActiveProvider()
-  if (!p.listToolPayloadSizesBucketed) return []
-  return await p.listToolPayloadSizesBucketed(opts)
+  return analytics.fetchToolPayloadSizes(getActiveProvider(), opts)
 }
 
 export async function getOverview(opts?: OverviewOpts): Promise<OverviewAggregate> {
-  const p = getActiveProvider()
-  if (!p.getOverview) return { runs: 0, erroredRuns: 0, p95ChatMs: 0, totalCostUsd: 0 }
-  return await p.getOverview(opts)
+  return analytics.fetchOverview(getActiveProvider(), opts)
+}
+
+export async function listChatLatencyOverTime(opts?: WindowOpts): Promise<LatencyPoint[]> {
+  return analytics.fetchChatLatencyOverTime(getActiveProvider(), opts)
+}
+
+export async function listCacheHitRateOverTime(opts?: WindowOpts): Promise<CacheHitPoint[]> {
+  return analytics.fetchCacheHitRateOverTime(getActiveProvider(), opts)
+}
+
+export async function listRunsPerHour(opts?: WindowOpts): Promise<RunsPoint[]> {
+  return analytics.fetchRunsPerHour(getActiveProvider(), opts)
 }

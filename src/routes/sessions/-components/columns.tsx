@@ -7,11 +7,11 @@ import { formatAgo, formatCost, formatDuration, formatTokens, metricTone, trunca
 import type { SessionSummary } from '#/lib/telemetry'
 
 function userPrimary(s: SessionSummary): string {
-  return s.userId ?? '—'
+  return s.userName ?? s.userId ?? '—'
 }
 
 function userSecondary(s: SessionSummary): string | undefined {
-  if (s.userName && s.userId) return s.userName
+  if (s.userName) return s.userId
   return undefined
 }
 
@@ -59,7 +59,7 @@ export const sessionColumns: ColumnDef<SessionSummary>[] = [
             <span className="font-mono text-[11px] text-muted-foreground">{idLabel}</span>
           )}
           {s.hasError ? (
-            <Badge variant="outline" className="shrink-0 px-1.5 text-muted-foreground">
+            <Badge variant="destructive" className="shrink-0 px-1.5">
               Error
             </Badge>
           ) : null}
@@ -92,7 +92,7 @@ export const sessionColumns: ColumnDef<SessionSummary>[] = [
     cell: ({ row }) => {
       const firstInput = row.original.firstInput?.trim()
       return firstInput ? (
-        <span className="block max-w-[420px] truncate text-foreground/80" title={firstInput}>
+        <span className="block max-w-[420px] truncate text-muted-foreground" title={firstInput}>
           {firstInput}
         </span>
       ) : (
@@ -110,7 +110,7 @@ export const sessionColumns: ColumnDef<SessionSummary>[] = [
       const secondary = userSecondary(row.original)
       return (
         <div className="flex min-w-0 items-center gap-1.5">
-          <span className="min-w-0 max-w-[160px] truncate text-foreground">{primary}</span>
+          <span className="min-w-0 max-w-[160px] truncate text-muted-foreground">{primary}</span>
           {secondary ? (
             <span className="max-w-[160px] shrink-0 truncate text-xs text-muted-foreground">{secondary}</span>
           ) : null}
@@ -120,10 +120,10 @@ export const sessionColumns: ColumnDef<SessionSummary>[] = [
   },
   {
     id: 'duration',
-    accessorFn: (s) => Math.max(0, s.lastSeenMs - s.startedAtMs),
+    accessorFn: (s) => s.activeDurationMs,
     header: ({ column }) => <DataTableColumnHeader column={column} title="Duration" className="justify-end" />,
     cell: ({ row }) => {
-      const ms = Math.max(0, row.original.lastSeenMs - row.original.startedAtMs)
+      const ms = row.original.activeDurationMs
       return (
         <div
           className={`flex items-center justify-end gap-1 tabular-nums ${metricTone('duration', ms, 'text-muted-foreground')}`}
@@ -155,7 +155,7 @@ export const sessionColumns: ColumnDef<SessionSummary>[] = [
   },
   {
     accessorKey: 'traceCount',
-    header: ({ column }) => <DataTableColumnHeader column={column} title="Turns" className="justify-end" />,
+    header: ({ column }) => <DataTableColumnHeader column={column} title="Traces" className="justify-end" />,
     cell: ({ row }) => <div className="text-right tabular-nums text-muted-foreground">{row.original.traceCount}</div>,
   },
 ]
