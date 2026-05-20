@@ -23,12 +23,12 @@ export function Section({
   wide?: boolean
 }) {
   return (
-    <Card className={`gap-3 py-3 ${wide ? 'xl:col-span-2' : ''}`}>
-      <CardHeader className="flex flex-row items-center gap-2 px-3 [.border-b]:pb-3">
+    <Card className={`gap-4 py-4 ${wide ? 'xl:col-span-2' : ''}`}>
+      <CardHeader className="flex flex-row items-center gap-2 px-4 [.border-b]:pb-4">
         <Icon className="size-4 fill-primary" />
-        <CardTitle className="text-sm font-semibold">{title}</CardTitle>
+        <CardTitle className="text-base font-semibold">{title}</CardTitle>
       </CardHeader>
-      <CardContent className="px-3">{children}</CardContent>
+      <CardContent className="px-4">{children}</CardContent>
     </Card>
   )
 }

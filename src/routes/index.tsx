@@ -56,15 +56,16 @@ function Home() {
   }
 
   return (
-    <Page title="Home">
-      <div className="flex flex-wrap items-center gap-2 px-4 lg:px-6">
-        <div className="ml-auto flex flex-wrap items-center gap-2">
+    <Page
+      title="Home"
+      actions={
+        <>
           <RefreshingIndicator active={isFetching} />
           <EnvSelect value={env} onChange={setEnv} />
           <TimeRangeSelect value={range} onChange={setRange} />
-        </div>
-      </div>
-
+        </>
+      }
+    >
       <div className="grid grid-cols-1 gap-4 px-4 lg:px-6 xl:grid-cols-2">
         <Section icon={InboxArrowDownIcon} title="Tools returning too much">
           <ToolPayloadTable rows={toolPayloads} />
