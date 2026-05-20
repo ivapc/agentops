@@ -4,14 +4,7 @@ import { useQuery } from '@tanstack/react-query'
 import { useState } from 'react'
 import { Badge } from '#/components/ui/badge'
 import { Button } from '#/components/ui/button'
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from '#/components/ui/dialog'
+import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from '#/components/ui/sheet'
 import { queryKeys } from '#/lib/query-keys'
 import { cn } from '#/lib/utils'
 import { getNoteForTarget } from '#/server/notes'
@@ -44,8 +37,8 @@ export function NoteSheetButton({ targetKind, targetId, parentTraceId, parentSes
   const hasNote = Boolean(note)
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>
+    <Sheet open={open} onOpenChange={setOpen}>
+      <SheetTrigger asChild>
         <Button variant={hasNote ? 'secondary' : 'ghost'} size="sm" aria-label={hasNote ? 'Edit note' : 'Add note'}>
           <HugeiconsIcon
             icon={StickyNote01Icon}
@@ -58,19 +51,21 @@ export function NoteSheetButton({ targetKind, targetId, parentTraceId, parentSes
             <Badge variant="outline" className="ml-1 size-1.5 rounded-full bg-primary p-0" aria-hidden />
           ) : null}
         </Button>
-      </DialogTrigger>
-      <DialogContent className="sm:max-w-lg">
-        <DialogHeader>
-          <DialogTitle>Note</DialogTitle>
-          <DialogDescription>{KIND_DESCRIPTION[targetKind]}</DialogDescription>
-        </DialogHeader>
-        <NoteEditor
-          targetKind={targetKind}
-          targetId={targetId}
-          parentTraceId={parentTraceId}
-          parentSessionId={parentSessionId}
-        />
-      </DialogContent>
-    </Dialog>
+      </SheetTrigger>
+      <SheetContent className="flex flex-col gap-0 sm:max-w-md" onOpenAutoFocus={(event) => event.preventDefault()}>
+        <SheetHeader>
+          <SheetTitle>Note</SheetTitle>
+          <SheetDescription>{KIND_DESCRIPTION[targetKind]}</SheetDescription>
+        </SheetHeader>
+        <div className="flex-1 overflow-y-auto px-4 pb-4">
+          <NoteEditor
+            targetKind={targetKind}
+            targetId={targetId}
+            parentTraceId={parentTraceId}
+            parentSessionId={parentSessionId}
+          />
+        </div>
+      </SheetContent>
+    </Sheet>
   )
 }

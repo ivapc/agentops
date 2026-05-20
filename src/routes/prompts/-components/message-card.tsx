@@ -51,7 +51,7 @@ export function MessageCard({
           value={message.content}
           onChange={(e) => onChange({ ...message, content: e.target.value })}
           placeholder={message.role === 'system' ? 'System instruction…' : 'Message content…'}
-          className="font-mono text-xs"
+          className="font-mono text-xs md:text-xs"
         />
       </CardContent>
     </Card>

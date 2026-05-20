@@ -22,13 +22,11 @@ export function ModelParamsPanel({ value, onChange }: { value: ModelParams; onCh
   return (
     <div className="flex flex-col gap-3">
       <h3 className="text-sm font-medium">Model</h3>
-      <div className="flex flex-col gap-2.5">
-        <div className="flex flex-col gap-1.5">
-          <Label htmlFor="model-select" className="text-xs">
-            Model
-          </Label>
+      <div className="flex flex-col gap-4">
+        <div className="grid gap-3">
+          <Label htmlFor="model-select">Model</Label>
           <Select value={value.model} onValueChange={(model) => onChange({ ...value, model })}>
-            <SelectTrigger id="model-select" size="sm">
+            <SelectTrigger id="model-select">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -45,14 +43,10 @@ export function ModelParamsPanel({ value, onChange }: { value: ModelParams; onCh
             </SelectContent>
           </Select>
         </div>
-        <div className="flex flex-col gap-1.5">
+        <div className="grid gap-3">
           <div className="flex items-center justify-between">
-            <Label htmlFor="model-temperature" className="text-xs">
-              Temperature
-            </Label>
-            <span className="font-mono text-xs tabular-nums text-muted-foreground">
-              {(value.temperature ?? 0).toFixed(2)}
-            </span>
+            <Label htmlFor="model-temperature">Temperature</Label>
+            <span className="tabular-nums text-sm text-muted-foreground">{(value.temperature ?? 0).toFixed(2)}</span>
           </div>
           <Slider
             id="model-temperature"
@@ -62,17 +56,11 @@ export function ModelParamsPanel({ value, onChange }: { value: ModelParams; onCh
             value={[value.temperature ?? 0]}
             onValueChange={([next]) => onChange({ ...value, temperature: next })}
           />
-          <div className="flex items-center justify-between text-[10px] text-muted-foreground">
-            <span>0</span>
-            <span>2</span>
-          </div>
         </div>
-        <div className="flex flex-col gap-1.5">
+        <div className="grid gap-3">
           <div className="flex items-center justify-between">
-            <Label htmlFor="model-top-p" className="text-xs">
-              Top P
-            </Label>
-            <span className="font-mono text-xs tabular-nums text-muted-foreground">{(value.topP ?? 1).toFixed(2)}</span>
+            <Label htmlFor="model-top-p">Top P</Label>
+            <span className="tabular-nums text-sm text-muted-foreground">{(value.topP ?? 1).toFixed(2)}</span>
           </div>
           <Slider
             id="model-top-p"
@@ -82,15 +70,9 @@ export function ModelParamsPanel({ value, onChange }: { value: ModelParams; onCh
             value={[value.topP ?? 1]}
             onValueChange={([next]) => onChange({ ...value, topP: next })}
           />
-          <div className="flex items-center justify-between text-[10px] text-muted-foreground">
-            <span>0</span>
-            <span>1</span>
-          </div>
         </div>
-        <div className="flex flex-col gap-1.5">
-          <Label htmlFor="model-max-tokens" className="text-xs">
-            Max tokens
-          </Label>
+        <div className="grid gap-3">
+          <Label htmlFor="model-max-tokens">Max tokens</Label>
           <Input
             id="model-max-tokens"
             type="number"

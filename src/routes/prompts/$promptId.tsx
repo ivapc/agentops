@@ -223,6 +223,9 @@ function PromptDetailLoaded({ prompt }: { prompt: NonNullable<Awaited<ReturnType
           prompt={prompt}
           hasChanges={hasChanges}
           saving={saveMutation.isPending}
+          isLatest={isLatest}
+          activeVersion={activeVersion.version}
+          latestVersion={latest.version}
           onSave={() => saveMutation.mutate()}
         />
 
@@ -235,12 +238,6 @@ function PromptDetailLoaded({ prompt }: { prompt: NonNullable<Awaited<ReturnType
             </TabsList>
 
             <TabsContent value="editor" className="pt-4">
-              {!isLatest && (
-                <div className="mb-3 rounded-lg border border-dashed bg-muted/50 px-3 py-2 text-xs text-muted-foreground">
-                  Viewing v{activeVersion.version}. Editing creates a new version on top of the latest (v
-                  {latest.version}).
-                </div>
-              )}
               <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1fr_340px]">
                 <div className="flex flex-col gap-4">
                   <PromptEditor messages={messages} onChange={setMessages} />
@@ -260,19 +257,15 @@ function PromptDetailLoaded({ prompt }: { prompt: NonNullable<Awaited<ReturnType
                     onShowDiff={handleShowDiff}
                   />
                 </div>
-                <aside className="flex flex-col gap-4">
+                <aside className="flex flex-col gap-6">
                   <VersionRail
                     versions={prompt.versions}
                     activeVersionId={activeVersion.id}
                     onSelect={handleSelectVersion}
                   />
-                  <Separator />
                   <VariablesPanel messages={messages} values={varValues} onChange={setVarValues} />
-                  <Separator />
                   <ModelParamsPanel value={modelParams} onChange={setModelParams} />
-                  <Separator />
                   <ToolsPanel tools={tools} onChange={setTools} />
-                  <Separator />
                   <ResponseFormatPanel value={responseFormat} onChange={setResponseFormat} />
                 </aside>
               </div>

@@ -1,18 +1,21 @@
+import { AiBrain01Icon, Robot01Icon, Wrench01Icon } from '@hugeicons/core-free-icons'
+import type { IconSvgElement } from '@hugeicons/react'
 import type { Span } from '#/lib/spans'
 
 export interface Display {
   name: string
   tagLabel: string
-  tagCls: string
+  tagIcon?: IconSvgElement
+  tagColor?: string
   /** Optional secondary badge for operation purpose (e.g. "title", "summary") */
   purposeLabel?: string
   purposeCls?: string
 }
 
-export const SPAN_TAGS: Record<string, { tagLabel: string; tagCls: string }> = {
-  invoke_agent: { tagLabel: 'agent', tagCls: 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300' },
-  chat: { tagLabel: 'llm', tagCls: 'bg-violet-500/15 text-violet-700 dark:text-violet-300' },
-  tool: { tagLabel: 'tool', tagCls: 'bg-sky-500/15 text-sky-700 dark:text-sky-300' },
+export const SPAN_TAGS: Record<string, { tagLabel: string; tagIcon: IconSvgElement; tagColor: string }> = {
+  invoke_agent: { tagLabel: 'agent', tagIcon: Robot01Icon, tagColor: 'text-emerald-500 dark:text-emerald-400' },
+  chat: { tagLabel: 'llm', tagIcon: AiBrain01Icon, tagColor: 'text-violet-500 dark:text-violet-400' },
+  tool: { tagLabel: 'tool', tagIcon: Wrench01Icon, tagColor: 'text-sky-500 dark:text-sky-400' },
 }
 
 const OPERATION_LABELS: Record<string, string> = {
@@ -36,7 +39,8 @@ export function displayFor(span: Span, labelOverrides?: Map<string, string>): Di
   return {
     name: overridden ?? span.toolName ?? span.agentName ?? span.name,
     tagLabel: tag?.tagLabel ?? '',
-    tagCls: tag?.tagCls ?? '',
+    tagIcon: tag?.tagIcon,
+    tagColor: tag?.tagColor,
     purposeLabel: opLabel,
     purposeCls: opLabel ? PURPOSE_CLS : undefined,
   }

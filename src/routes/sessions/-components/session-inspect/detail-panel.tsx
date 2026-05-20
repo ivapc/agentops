@@ -4,6 +4,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from '@tanstack/react-router'
 import { useMemo } from 'react'
 import { toast } from 'sonner'
+import { Badge } from '#/components/ui/badge'
 import { Button } from '#/components/ui/button'
 import { asMessages, type ChatMessage, type MessagePart, type MessageRole } from '#/lib/conversation'
 import { formatCost } from '#/lib/format'
@@ -61,9 +62,17 @@ export function DetailPanel({ span, spans }: { span: Span; spans?: Span[] }) {
     <div className="flex min-w-0 max-w-full flex-col gap-4 px-4 py-4">
       <div className="flex min-w-0 items-center gap-2">
         {display.tagLabel && (
-          <span className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium ${display.tagCls}`}>
+          <Badge variant="outline" className="px-1.5 text-muted-foreground">
+            {display.tagIcon && (
+              <HugeiconsIcon
+                icon={display.tagIcon}
+                strokeWidth={1.5}
+                className={`size-3 ${display.tagColor ?? ''}`}
+                aria-hidden
+              />
+            )}
             {display.tagLabel}
-          </span>
+          </Badge>
         )}
         <span className="min-w-0 flex-1 truncate text-base font-semibold text-foreground">{display.name}</span>
         {display.purposeLabel && (

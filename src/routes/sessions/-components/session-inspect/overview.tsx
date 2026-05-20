@@ -641,7 +641,7 @@ function SessionTurnRow({
           )}
         </div>
       </TableCell>
-      <TableCell className="py-1.5 text-right tabular-nums text-muted-foreground">{chats.length}</TableCell>
+      <TableCell className="py-1.5 text-right tabular-nums">{chats.length}</TableCell>
       <TableCell className="py-1.5 text-right tabular-nums">
         <span className="text-foreground">{tokenTotal ? formatTokens(tokenTotal) : '—'}</span>
         {totals.cachedTokens > 0 && (

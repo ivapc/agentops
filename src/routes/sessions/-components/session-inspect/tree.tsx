@@ -1,5 +1,8 @@
-import { ChevronDownIcon, ChevronRightIcon, ClockIcon } from '@heroicons/react/16/solid'
+import { ChevronDownIcon, ChevronRightIcon } from '@heroicons/react/16/solid'
+import { Clock01Icon } from '@hugeicons/core-free-icons'
+import { HugeiconsIcon } from '@hugeicons/react'
 import { useCallback, useMemo, useState } from 'react'
+import { Badge } from '#/components/ui/badge'
 import {
   Command,
   CommandDialog,
@@ -197,9 +200,17 @@ export function SpanTreeList({
                   onSelect={() => handlePaletteSelect(span.id)}
                 >
                   {display.tagLabel && (
-                    <span className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium ${display.tagCls}`}>
+                    <Badge variant="outline" className="px-1.5 text-muted-foreground">
+                      {display.tagIcon && (
+                        <HugeiconsIcon
+                          icon={display.tagIcon}
+                          strokeWidth={1.5}
+                          className={`size-3 ${display.tagColor ?? ''}`}
+                          aria-hidden
+                        />
+                      )}
                       {display.tagLabel}
-                    </span>
+                    </Badge>
                   )}
                   <span className="min-w-0 flex-1 truncate">{display.name}</span>
                   {display.purposeLabel && (
@@ -324,9 +335,17 @@ function SpanTreeRow({ row, selected, onSelect, onToggleCollapse, agentLabels }:
         >
           <div className="flex min-w-0 items-center gap-2">
             {display.tagLabel && (
-              <span className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium ${display.tagCls}`}>
+              <Badge variant="outline" className="px-1.5 text-muted-foreground">
+                {display.tagIcon && (
+                  <HugeiconsIcon
+                    icon={display.tagIcon}
+                    strokeWidth={1.5}
+                    className={`size-3 ${display.tagColor ?? ''}`}
+                    aria-hidden
+                  />
+                )}
                 {display.tagLabel}
-              </span>
+              </Badge>
             )}
             <span className="truncate font-medium text-foreground">{display.name}</span>
             {display.purposeLabel && (
@@ -342,10 +361,15 @@ function SpanTreeRow({ row, selected, onSelect, onToggleCollapse, agentLabels }:
             {depth === 0 &&
               (span.rawAttributes?.session_trigger_type ?? span.rawAttributes?.['session.trigger_type']) ===
                 'scheduled' && (
-                <span className="inline-flex shrink-0 items-center gap-0.5 rounded bg-orange-500/15 px-1.5 py-0.5 text-[10px] font-medium text-orange-700 dark:text-orange-300">
-                  <ClockIcon className="size-3" />
-                  scheduled
-                </span>
+                <Badge variant="outline" className="px-1.5 text-muted-foreground">
+                  <HugeiconsIcon
+                    icon={Clock01Icon}
+                    strokeWidth={1.5}
+                    className="size-3 text-amber-500 dark:text-amber-400"
+                    aria-hidden
+                  />
+                  Scheduled
+                </Badge>
               )}
           </div>
           {!isAgent && (

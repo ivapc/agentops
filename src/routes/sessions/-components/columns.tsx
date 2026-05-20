@@ -34,10 +34,10 @@ function SessionIdCell({ session }: { session: SessionSummary }) {
           <span className="min-w-0 max-w-[240px] truncate font-medium text-foreground" title={title}>
             {title}
           </span>
-          <span className="shrink-0 font-mono text-[11px] text-muted-foreground">{idLabel}</span>
+          <span className="shrink-0 font-mono text-[11px]">{idLabel}</span>
         </>
       ) : (
-        <span className="font-mono text-[11px] text-muted-foreground">{idLabel}</span>
+        <span className="font-mono text-[11px]">{idLabel}</span>
       )}
       {hasNote ? (
         <Tooltip>
@@ -112,7 +112,7 @@ export const sessionColumns: ColumnDef<SessionSummary>[] = [
     cell: ({ row }) => {
       const firstInput = row.original.firstInput?.trim()
       return firstInput ? (
-        <span className="block max-w-[420px] truncate text-muted-foreground" title={firstInput}>
+        <span className="block max-w-[420px] truncate" title={firstInput}>
           {firstInput}
         </span>
       ) : (
@@ -130,7 +130,7 @@ export const sessionColumns: ColumnDef<SessionSummary>[] = [
       const secondary = userSecondary(row.original)
       return (
         <div className="flex min-w-0 items-center gap-1.5">
-          <span className="min-w-0 max-w-[160px] truncate text-muted-foreground">{primary}</span>
+          <span className="min-w-0 max-w-[160px] truncate">{primary}</span>
           {secondary ? (
             <span className="max-w-[160px] shrink-0 truncate text-xs text-muted-foreground">{secondary}</span>
           ) : null}
@@ -145,9 +145,7 @@ export const sessionColumns: ColumnDef<SessionSummary>[] = [
     cell: ({ row }) => {
       const ms = row.original.activeDurationMs
       return (
-        <div
-          className={`flex items-center justify-end gap-1 tabular-nums ${metricTone('duration', ms, 'text-muted-foreground')}`}
-        >
+        <div className={`flex items-center justify-end gap-1 tabular-nums ${metricTone('duration', ms)}`}>
           <HugeiconsIcon icon={Clock01Icon} strokeWidth={2} className="size-3.5 opacity-80" />
           {formatDuration(ms)}
         </div>
@@ -157,25 +155,19 @@ export const sessionColumns: ColumnDef<SessionSummary>[] = [
   {
     accessorKey: 'totalTokens',
     header: ({ column }) => <DataTableColumnHeader column={column} title="Tokens" className="justify-end" />,
-    cell: ({ row }) => (
-      <div className="text-right tabular-nums text-muted-foreground">{formatTokens(row.original.totalTokens)}</div>
-    ),
+    cell: ({ row }) => <div className="text-right tabular-nums">{formatTokens(row.original.totalTokens)}</div>,
   },
   {
     accessorKey: 'totalCostUsd',
     header: ({ column }) => <DataTableColumnHeader column={column} title="Cost" className="justify-end" />,
     cell: ({ row }) => {
       const value = row.original.totalCostUsd ?? 0
-      return (
-        <div className={`text-right tabular-nums ${metricTone('cost', value, 'text-muted-foreground')}`}>
-          {formatCost(value)}
-        </div>
-      )
+      return <div className={`text-right tabular-nums ${metricTone('cost', value)}`}>{formatCost(value)}</div>
     },
   },
   {
     accessorKey: 'traceCount',
     header: ({ column }) => <DataTableColumnHeader column={column} title="Traces" className="justify-end" />,
-    cell: ({ row }) => <div className="text-right tabular-nums text-muted-foreground">{row.original.traceCount}</div>,
+    cell: ({ row }) => <div className="text-right tabular-nums">{row.original.traceCount}</div>,
   },
 ]

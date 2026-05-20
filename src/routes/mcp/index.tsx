@@ -60,12 +60,10 @@ function McpPage() {
                   <TableCell>
                     <div className="flex min-w-0 flex-col">
                       <span className="font-medium">{server.name}</span>
-                      <span className="truncate font-mono text-sm text-muted-foreground">
-                        {server.endpoint ?? server.source}
-                      </span>
+                      <span className="truncate font-mono text-sm">{server.endpoint ?? server.source}</span>
                     </div>
                   </TableCell>
-                  <TableCell className="text-muted-foreground">{owner}</TableCell>
+                  <TableCell>{owner}</TableCell>
                   <TableCell className="text-right tabular-nums">{server.tools.length}</TableCell>
                   <TableCell className="text-right tabular-nums">{serverFindings.length}</TableCell>
                   <TableCell>

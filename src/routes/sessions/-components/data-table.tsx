@@ -117,7 +117,7 @@ export function DataTable({
 
   return (
     <div className="flex h-full w-full flex-col">
-      <div className="-mt-4 flex flex-wrap items-center justify-between gap-x-3 gap-y-2 border-b bg-muted/30 px-4 py-2 md:-mt-6 lg:px-6">
+      <div className="-mt-4 flex flex-wrap items-center justify-between gap-x-3 gap-y-2 px-4 py-2 md:-mt-6 lg:px-6">
         <div className="flex flex-1 flex-wrap items-center gap-2">
           {searchColumn && (
             <div className="relative w-full min-w-0 sm:w-64">
@@ -175,7 +175,7 @@ export function DataTable({
         </div>
       </div>
       <div className="flex min-h-0 flex-1 flex-col px-4 py-4 md:py-6 lg:px-6">
-        <div className="min-h-0 flex-1 overflow-auto rounded-lg border">
+        <div className="min-h-0 flex-1 overflow-hidden overflow-y-auto rounded-lg border bg-background">
           <Table>
             <TableHeader className="sticky top-0 z-10 bg-muted">
               {table.getHeaderGroups().map((headerGroup) => (

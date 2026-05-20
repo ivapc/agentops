@@ -1,4 +1,5 @@
 import { Button } from '#/components/ui/button'
+import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip'
 import { formatAgo } from '#/lib/format'
 import { NoteSheetButton } from '#/routes/notes/-components/note-sheet-button'
 import type { Prompt } from '../-types'
@@ -7,11 +8,17 @@ export function PromptDetailHeader({
   prompt,
   hasChanges,
   saving,
+  isLatest,
+  activeVersion,
+  latestVersion,
   onSave,
 }: {
   prompt: Prompt
   hasChanges: boolean
   saving: boolean
+  isLatest: boolean
+  activeVersion: number
+  latestVersion: number
   onSave: () => void
 }) {
   const latest = prompt.versions[prompt.versions.length - 1]
@@ -23,7 +30,20 @@ export function PromptDetailHeader({
           last updated {formatAgo(prompt.updatedAt)} by {latest?.author ?? '—'}
         </span>
       </div>
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-3">
+        {!isLatest && (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span className="cursor-help border-b border-dashed border-muted-foreground/40 text-xs text-muted-foreground">
+                Viewing v{activeVersion} · saves on top of v{latestVersion}
+              </span>
+            </TooltipTrigger>
+            <TooltipContent side="bottom" className="max-w-xs">
+              You're viewing v{activeVersion}, but the latest is v{latestVersion}. Saving will create a new version on
+              top of v{latestVersion} — it won't overwrite the version you're looking at.
+            </TooltipContent>
+          </Tooltip>
+        )}
         <NoteSheetButton targetKind="prompt" targetId={prompt.id} />
         <Button onClick={onSave} disabled={!hasChanges || saving}>
           {saving ? 'Saving…' : 'Save as new version'}

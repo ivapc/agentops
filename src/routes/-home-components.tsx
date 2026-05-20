@@ -119,7 +119,7 @@ export function ToolErrorTable({ rows }: { rows: ToolErrorRow[] }) {
                   {stripPrefix(row.name, 'execute_tool')}
                 </TableCell>
                 <TableCell className="text-right tabular-nums">{row.errors}</TableCell>
-                <TableCell className="text-right tabular-nums text-muted-foreground">{row.total}</TableCell>
+                <TableCell className="text-right tabular-nums">{row.total}</TableCell>
                 <TableCell className="text-right">
                   <Badge variant="destructive">{(row.errorRate * 100).toFixed(1)}%</Badge>
                 </TableCell>
@@ -158,13 +158,13 @@ export function ToolPayloadTable({ rows }: { rows: ToolPayloadRow[] }) {
                 <TableCell className="max-w-0 truncate font-mono text-xs" title={row.name}>
                   {stripPrefix(row.name, 'execute_tool')}
                 </TableCell>
-                <TableCell className="text-right tabular-nums text-muted-foreground">
+                <TableCell className="text-right tabular-nums">
                   <Chars chars={row.avgChars} />
                 </TableCell>
                 <TableCell className="text-right tabular-nums">
                   <Chars chars={row.p95Chars} />
                 </TableCell>
-                <TableCell className="text-right tabular-nums text-muted-foreground">
+                <TableCell className="text-right tabular-nums">
                   <Chars chars={row.maxChars} />
                 </TableCell>
                 <TableCell>
@@ -199,7 +199,7 @@ export function NewToolsTable({ rows }: { rows: InventoryRow[] }) {
             {visible.map((row) => (
               <TableRow key={row.id}>
                 <TableCell className="font-mono text-xs">{row.name}</TableCell>
-                <TableCell className="text-muted-foreground">{row.namespace || 'unknown'}</TableCell>
+                <TableCell>{row.namespace || 'unknown'}</TableCell>
                 <TableCell className="tabular-nums text-muted-foreground">{formatAgo(row.firstSeenAtMs)}</TableCell>
                 <TableCell>
                   <OpenLink traceId={row.firstSeenTraceId} />
