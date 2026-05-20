@@ -3,7 +3,7 @@ import { asMessages } from '#/lib/conversation'
 import { parseJson } from '#/lib/json'
 import { estimateCostUsd } from '#/lib/llm-pricing'
 import { pickCanonical, pickCanonicalNumber } from './conventions'
-import type { LatencyRow, SessionSummary, ToolErrorRow, ToolPayloadRow } from './types'
+import type { SessionSummary, ToolErrorRow, ToolPayloadRow } from './types'
 
 export type IdentityFilter = { userId?: string; userName?: string }
 
@@ -13,21 +13,6 @@ export function pickIdentityValue(
   if (opts?.userId) return { kind: 'id', value: opts.userId }
   if (opts?.userName) return { kind: 'name', value: opts.userName }
   return undefined
-}
-
-export function mapLatencyRow(row: Record<string, unknown>): LatencyRow {
-  const toMs = (v: unknown) => {
-    const n = Math.round(Number(v ?? 0))
-    return Number.isFinite(n) && n > 0 ? n : 0
-  }
-  return {
-    name: String(row.name ?? row.operation_name ?? '?'),
-    p50Ms: toMs(row.p50_ms),
-    p90Ms: toMs(row.p90_ms),
-    p95Ms: toMs(row.p95_ms),
-    p99Ms: toMs(row.p99_ms),
-    count: Number(row.count ?? 0),
-  }
 }
 
 export function mapToolErrorRow(row: Record<string, unknown>): ToolErrorRow {
@@ -198,7 +183,15 @@ function rollupTrace(rows: Array<Record<string, unknown>>): Omit<TraceSession, '
         }
       }
     }
-    if (h.span_status === 'ERROR') hasError = true
+    // Only flag errors on actual AI-operation spans (chat, invoke_agent,
+    // execute_tool). Infrastructure spans that merely carry session.trigger_type
+    // should not mark the whole session as errored.
+    if (h.span_status === 'ERROR') {
+      const opName = typeof h.operation_name === 'string' ? h.operation_name : ''
+      if (h.gen_ai_operation_name || opName.startsWith('invoke_agent ') || opName.startsWith('execute_tool ')) {
+        hasError = true
+      }
+    }
   }
   return {
     startMs: startMs === Number.POSITIVE_INFINITY ? 0 : startMs,
@@ -246,6 +239,12 @@ export function num(v: unknown): number | undefined {
   if (v === null || v === undefined || v === '') return undefined
   const n = Number(v)
   return Number.isFinite(n) ? n : undefined
+}
+
+// Single-value string picker — returns the value if it is a non-empty string,
+// otherwise undefined. The multi-key variant is `pickString` above.
+export function pickStringValue(v: unknown): string | undefined {
+  return typeof v === 'string' && v ? v : undefined
 }
 
 export function groupBy<T, K>(items: readonly T[], key: (item: T) => K): Map<K, T[]> {

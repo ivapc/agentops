@@ -87,9 +87,11 @@ export function TracesDataTable({
   const [columnVisibility, setColumnVisibility] = React.useState<VisibilityState>({
     status: false,
     category: false,
+    hasSession: false,
   })
   const [columnFilters, setColumnFilters] = React.useState<ColumnFiltersState>([
     { id: 'category', value: ['chat', 'sub-agent', 'scheduled', 'webhook', 'background', 'utility', 'orphan'] },
+    { id: 'hasSession', value: ['no'] },
   ])
   const [sorting, setSorting] = React.useState<SortingState>([])
   const [pagination, setPagination] = React.useState({
@@ -140,6 +142,21 @@ export function TracesDataTable({
           <RefreshingIndicator active={!!refreshing} />
         </div>
         <div className="flex flex-wrap items-center gap-1.5">
+          {(() => {
+            const col = table.getColumn('hasSession')
+            if (!col) return null
+            const current = col.getFilterValue() as string[] | undefined
+            const showingSession = !current || current.length === 0 || current.includes('yes')
+            return (
+              <Button
+                variant={showingSession ? 'secondary' : 'outline'}
+                size="sm"
+                onClick={() => col.setFilterValue(showingSession ? ['no'] : ['yes', 'no'])}
+              >
+                {showingSession ? 'Showing session traces' : 'Session traces hidden'}
+              </Button>
+            )
+          })()}
           {table.getColumn('category') && (
             <DataTableFacetedFilter column={table.getColumn('category')} title="Category" options={CATEGORY_OPTIONS} />
           )}
@@ -153,7 +170,7 @@ export function TracesDataTable({
             onRefresh={onRefresh}
             loading={refreshing}
           />
-          <Separator orientation="vertical" className="mx-1 h-5" />
+          <Separator orientation="vertical" className="mx-1 h-5 self-center" />
           <DropdownMenu>
             <Tooltip>
               <TooltipTrigger asChild>
@@ -183,7 +200,7 @@ export function TracesDataTable({
           </DropdownMenu>
         </div>
       </div>
-      <div className="flex min-h-0 flex-1 flex-col px-4 pt-4 md:pt-6 lg:px-6">
+      <div className="flex min-h-0 flex-1 flex-col px-4 py-4 md:py-6 lg:px-6">
         <div className="min-h-0 flex-1 overflow-auto rounded-lg border">
           <Table>
             <TableHeader className="sticky top-0 z-10 bg-muted">
