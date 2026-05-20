@@ -75,9 +75,9 @@ const MODES = [
 ] as const
 
 const COLORS: { value: ColorTheme; label: string; dot: string }[] = [
-  { value: 'pink-mauve', label: 'Pink Mauve', dot: 'oklch(0.525 0.223 3.958)' },
-  { value: 'violet', label: 'Violet', dot: 'oklch(0.4597 0.0629 289.5561)' },
-  { value: 'lavender', label: 'Lavender', dot: 'oklch(0.6104 0.0767 299.7335)' },
+  { value: 'neutral', label: 'Neutral', dot: 'oklch(0.205 0 0)' },
+  { value: 'slack', label: 'Slack', dot: 'oklch(0.37 0.14 323.23)' },
+  { value: 'vscode', label: 'VS Code', dot: 'oklch(0.71 0.15 239.07)' },
 ]
 
 const FONTS: { value: AppFont; label: string; family: string }[] = [
@@ -120,7 +120,7 @@ function AppearancePane() {
       </Field>
 
       <Field label="Color" hint="Accent palette. Switches apply instantly and persist in this browser.">
-        <div className="grid grid-cols-2 gap-2">
+        <div className="grid grid-cols-3 gap-2">
           {COLORS.map(({ value, label, dot }) => {
             const isActive = colorTheme === value
             return (

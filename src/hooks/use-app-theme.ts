@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 
-export const COLOR_THEMES = ['pink-mauve', 'violet', 'lavender'] as const
+export const COLOR_THEMES = ['neutral', 'slack', 'vscode'] as const
 export const APP_FONTS = ['pretendard', 'inter'] as const
 
 export type ColorTheme = (typeof COLOR_THEMES)[number]
@@ -8,7 +8,7 @@ export type AppFont = (typeof APP_FONTS)[number]
 
 const COLOR_STORAGE_KEY = 'color-theme'
 const FONT_STORAGE_KEY = 'app-font'
-const DEFAULT_COLOR: ColorTheme = 'pink-mauve'
+const DEFAULT_COLOR: ColorTheme = 'neutral'
 const DEFAULT_FONT: AppFont = 'pretendard'
 
 function isColorTheme(value: string | undefined): value is ColorTheme {
@@ -23,8 +23,6 @@ export function useAppTheme() {
   const [colorTheme, setColorThemeState] = useState<ColorTheme>(DEFAULT_COLOR)
   const [font, setFontState] = useState<AppFont>(DEFAULT_FONT)
 
-  // The inline script in __root.tsx already wrote dataset on <html>; mirror
-  // into React state on mount so the picker UI starts in sync.
   useEffect(() => {
     const root = document.documentElement
     setColorThemeState(isColorTheme(root.dataset.theme) ? root.dataset.theme : DEFAULT_COLOR)
