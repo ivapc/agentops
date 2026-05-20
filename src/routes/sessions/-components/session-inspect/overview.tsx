@@ -35,10 +35,12 @@ import {
 } from '#/lib/spans'
 import { extractTurns, type Turn, turnTotals } from '#/lib/turns'
 import { cn } from '#/lib/utils'
-import { ContextTools, collectFrontendTools, collectToolGroups } from './context'
+import { ContextTools } from './context'
+import { collectFrontendTools, collectToolGroups } from './context-collectors'
 import { computeContextSegments, SEGMENT_COLORS } from './context-segments'
+import { DetailPanel } from './detail-panel'
 import { displayFor, formatDuration } from './shared'
-import { DetailPanel, SpanTreeList } from './tree'
+import { SpanTreeList } from './tree'
 
 type InspectorTab = 'details' | 'tools' | 'turns' | 'logs' | 'attributes'
 

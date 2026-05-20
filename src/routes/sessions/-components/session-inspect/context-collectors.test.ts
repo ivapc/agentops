@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { Span } from '#/lib/spans'
-import { collectFrontendTools, collectToolGroups } from './context'
+import { collectFrontendTools, collectToolGroups } from './context-collectors'
 
 function span(overrides: Partial<Span> & Pick<Span, 'id' | 'operation'>): Span {
   return {
