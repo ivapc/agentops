@@ -1,40 +1,18 @@
 # agentops
 
-"TODO" means the root `TODO.md` — read it, append entries there when relevant.
-
-For docs structure and where to put new ones, see `docs/README.md`.
+`TODO.md` is the running todo list. `docs/README.md` covers docs structure.
 
 ## Layout
 
-- `src/routes/` — file-based routes. `-name.tsx` files are route-scoped and ignored by the router. Co-locate aggressively; lift to `src/lib/` or `src/components/` only when a 2nd route consumes it.
-- `src/components/ui/` — shadcn primitives (radix-mira preset, see `components.json`). `src/components/` — app-specific composed components.
-- `src/lib/` — cross-cutting client utilities and shared domain types (e.g. `spans.ts`).
-- `src/server/` — server-only code: ingest mappers, future API handlers.
-- `src/db/` — Drizzle schema + client. `src/integrations/` — framework wiring (tanstack-query).
+- `src/routes/` — file-based routes; `-name.tsx` files are route-scoped. Co-locate; lift to `src/lib/` or `src/components/` only when a 2nd route consumes it.
+- `src/components/ui/` shadcn primitives (radix-mira preset). `src/components/` app-specific composed.
+- `src/lib/` cross-cutting client utils + shared domain types. `src/server/` server-only. `src/db/` Drizzle. `src/integrations/` framework wiring.
 
-## Product Map
+## Map
 
-Optimize for tokens: use this map before broad searches.
-
-- App shell mounts in `src/routes/__root.tsx`: `SidebarProvider` + `AppSidebar` (`src/components/app-sidebar.tsx`) + `SiteHeader` (`src/components/site-header.tsx`). Routes wrap their body in `Page` (`src/components/page.tsx`).
-- `/` Home shows "what's new/weird": new MCP tools, new agents, and anomaly entry points.
-- `/sessions` lists agent sessions with time range, search, status filters, cost/tokens, and opens `SessionInspectDrawer`.
-- `/sessions/$sessionId` is the session detail page (Spans + Conversation). Legacy `?view=trace` in the URL is treated as spans.
-- `/traces` lists individual traces + elevated purpose-spans. Session-bound chat traces are hidden by default (toggle to show). Utility purpose-spans (`gen_ai.operation.purpose`) from inside session traces are surfaced as their own rows.
-- `/mcp` lists MCP servers, owners, tool counts, findings, and fetch status.
-- `/evals` is currently an empty-state placeholder.
-- `/inbox` lists alerts with snooze/dismiss actions and links back to sessions and runs.
-
-Key session/run UI:
-
-- `src/routes/sessions/-components/session-inspect/drawer.tsx` — right drawer from `/sessions`; Spans / Conversation / Context tabs.
-- `src/routes/sessions/$sessionId.tsx` is the full-page version of the same thing (adds URL state, time range, provider/fingerprint badge).
-- Drawer and session page share view components — `./session-inspect/overview.tsx` (Spans), `src/components/conversation-view.tsx`, `./session-inspect/context.tsx`. Edit those, not the shells.
-- The span tree (`./session-inspect/tree.tsx`) hides plain `http` transport spans, reparents children upward, aggregates subtree tokens/cost.
-- Span/domain helpers: `src/lib/spans.ts`. Shared formatting: `src/lib/format.ts`.
-
-Ingest & attribute parsing:
-
-- `src/lib/classify-span.ts` — turns an OTel attribute bag + span name into a typed `Classification` (operation, model, tokens, tool fields, session id, …). Touch this when adding semconv support.
-- `src/lib/telemetry/` — provider clients (OpenObserve, App Insights) that fetch live spans. No local mirror DB.
-- Span attribute reference: `docs/reference/ai-attributes.md` — canonical lookup for `gen_ai.*`, Logfire `llm_*`, AG-UI `ag_ui_*`, OpenAI extensions, and the agent-as-tool pattern.
+- App shell: `src/routes/__root.tsx` mounts `AppSidebar` + `SiteHeader`. Routes wrap their body in `Page`.
+- `/sessions` list + `SessionInspectDrawer`; `/sessions/$sessionId` is the full-page version. Both share view components — edit those, not the shells.
+- `/traces` lists traces + elevated purpose-spans; session-bound chat traces hidden by default.
+- Session drawer (`src/routes/sessions/-components/session-inspect/`): `drawer.tsx` shell · `overview.tsx` Spans-tab layout + inspector tabs · `tree.tsx` left pane (tree, palette) · `detail-panel.tsx` right pane (messages, tool calls, Make-prompt) · `context.tsx` Context-tab UI backed by pure `context-collectors.ts` · `context-segments.ts` stacked-bar math. Keep pure helpers in `.ts` siblings so tests don't pull `src/db` via React imports.
+- Span/domain helpers: `src/lib/spans.ts`. Formatting: `src/lib/format.ts`.
+- Ingest: `src/lib/classify-span.ts` (OTel bag → typed `Classification`). Provider clients in `src/lib/telemetry/` — no local mirror DB. Attribute reference: `docs/reference/ai-attributes.md`.
