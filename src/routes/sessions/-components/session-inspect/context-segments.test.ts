@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { computeContextSegments } from './overview'
+import { computeContextSegments } from './context-segments'
 
 describe('computeContextSegments', () => {
   it('returns segments in the fixed order: system, tools, messages, subagents', () => {
