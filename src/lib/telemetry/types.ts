@@ -33,7 +33,6 @@ export interface SpanSummary {
   totalTokens?: number
   totalCostUsd?: number
   modelId?: string
-  serviceName?: string
   hasError?: boolean
   userId?: string
   userName?: string
@@ -63,12 +62,8 @@ export interface TraceSummary {
   totalCostUsd?: number
   hasError?: boolean
   category?: TraceCategory
-  // Raw producer attributes, kept so the UI can show a secondary chip
-  // (e.g. llm_purpose=title_generation under category=utility).
-  triggerType?: string
-  execution?: string
+  // Shown as a secondary chip when category=utility (e.g. "title_generation").
   llmPurpose?: string
-  hasSessionAttribute?: boolean
   // Root operation name (first non-http span or fallback to first span name).
   rootOperation?: string
   // User identity if present on the trace (lifted from user.id / user.name attrs).
@@ -167,6 +162,27 @@ export type SessionFetch = {
   title?: string
 } | null
 
+export type LogLevel = 'trace' | 'debug' | 'info' | 'warn' | 'error' | 'fatal'
+
+// One application log record correlated to a trace. Time is in ms.
+// `source` is the producer namespace (logger name / cloud_RoleName / etc).
+// `attributes` carries everything else the row had so the UI can expand it.
+export interface LogRecord {
+  id: string
+  timestampMs: number
+  level: LogLevel
+  message: string
+  source?: string
+  traceId?: string
+  spanId?: string
+  attributes?: Record<string, import('#/lib/json').JsonValue>
+}
+
+export interface ListLogsOpts extends WindowOpts {
+  traceIds: string[]
+  limit?: number
+}
+
 // Span-shape methods stay on the provider — each one's row format is bespoke
 // and intertwined with span normalization. Pure-aggregation features (overview,
 // latency, tool stats, inventory) live in features.ts and dispatch on `name`;
@@ -179,6 +195,7 @@ interface BaseProvider {
   listSpans?(opts?: ListSpansOpts): Promise<SpanSummary[]>
   listSessions?(opts?: ListSessionsOpts): Promise<{ sessions: SessionSummary[]; truncated: boolean }>
   getSession?(sessionId: string, opts?: GetTraceOpts): Promise<SessionFetch>
+  listLogs?(opts: ListLogsOpts): Promise<LogRecord[]>
   query(q: string, opts: WindowOpts & { size?: number }): Promise<Array<Record<string, unknown>>>
 }
 

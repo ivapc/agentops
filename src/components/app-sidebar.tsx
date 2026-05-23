@@ -2,6 +2,7 @@ import {
   Edit02Icon,
   Home01Icon,
   InboxIcon,
+  KeyboardIcon,
   Logout01Icon,
   MessageMultiple01Icon,
   Moon01Icon,
@@ -12,8 +13,8 @@ import {
   Settings01Icon,
   StickyNote01Icon,
   Sun01Icon,
+  Task01Icon,
   TestTubeIcon,
-  UserCircleIcon,
 } from '@hugeicons/core-free-icons'
 import { HugeiconsIcon } from '@hugeicons/react'
 import { useQuery } from '@tanstack/react-query'
@@ -22,11 +23,14 @@ import { useTheme } from 'next-themes'
 import { useState } from 'react'
 import { Logo } from '#/components/logo'
 import { SettingsDialog } from '#/components/settings-dialog'
+import { useShortcutsDialog } from '#/components/shortcuts-dialog'
 import { Avatar, AvatarFallback } from '#/components/ui/avatar'
 import {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuGroup,
   DropdownMenuItem,
+  DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '#/components/ui/dropdown-menu'
@@ -39,9 +43,9 @@ import {
   SidebarGroupLabel,
   SidebarHeader,
   SidebarMenu,
+  SidebarMenuBadge,
   SidebarMenuButton,
   SidebarMenuItem,
-  useSidebar,
 } from '#/components/ui/sidebar'
 import { useUser, useUserId } from '#/hooks/use-user'
 import { DEFAULT } from '#/lib/time-range'
@@ -51,10 +55,11 @@ import { currentUserSessionsQuery } from '#/routes/sessions/-data'
 const APP_VERSION = `v${__APP_VERSION__}`
 
 type NavItem = {
-  to: '/' | '/sessions' | '/traces' | '/mcp' | '/evals' | '/notes' | '/prompts'
+  to: '/' | '/sessions' | '/traces' | '/mcp' | '/evals' | '/notes' | '/prompts' | '/tasks'
   label: string
   icon: typeof Home01Icon
   match: (path: string) => boolean
+  soon?: boolean
 }
 
 const OBSERVE_NAV: NavItem[] = [
@@ -66,13 +71,14 @@ const OBSERVE_NAV: NavItem[] = [
     icon: PlayCircleIcon,
     match: (p) => p.startsWith('/traces'),
   },
-  { to: '/mcp', label: 'MCP', icon: PuzzleIcon, match: (p) => p.startsWith('/mcp') },
+  { to: '/tasks', label: 'Tasks', icon: Task01Icon, match: (p) => p.startsWith('/tasks') },
+  { to: '/mcp', label: 'MCP', icon: PuzzleIcon, match: (p) => p.startsWith('/mcp'), soon: true },
 ]
 
 const WORKBENCH_NAV: NavItem[] = [
   { to: '/notes', label: 'Notes', icon: StickyNote01Icon, match: (p) => p.startsWith('/notes') },
   { to: '/prompts', label: 'Prompts', icon: Edit02Icon, match: (p) => p.startsWith('/prompts') },
-  { to: '/evals', label: 'Evals', icon: TestTubeIcon, match: (p) => p.startsWith('/evals') },
+  { to: '/evals', label: 'Evals', icon: TestTubeIcon, match: (p) => p.startsWith('/evals'), soon: true },
 ]
 
 export function AppSidebar() {
@@ -108,14 +114,7 @@ export function AppSidebar() {
             <SidebarGroupContent>
               <SidebarMenu>
                 {OBSERVE_NAV.map((item) => (
-                  <SidebarMenuItem key={item.to}>
-                    <SidebarMenuButton asChild isActive={item.match(pathname)}>
-                      <Link to={item.to}>
-                        <HugeiconsIcon icon={item.icon} />
-                        <span>{item.label}</span>
-                      </Link>
-                    </SidebarMenuButton>
-                  </SidebarMenuItem>
+                  <NavRow key={item.to} item={item} pathname={pathname} />
                 ))}
               </SidebarMenu>
             </SidebarGroupContent>
@@ -126,14 +125,7 @@ export function AppSidebar() {
             <SidebarGroupContent>
               <SidebarMenu>
                 {WORKBENCH_NAV.map((item) => (
-                  <SidebarMenuItem key={item.to}>
-                    <SidebarMenuButton asChild isActive={item.match(pathname)}>
-                      <Link to={item.to}>
-                        <HugeiconsIcon icon={item.icon} />
-                        <span>{item.label}</span>
-                      </Link>
-                    </SidebarMenuButton>
-                  </SidebarMenuItem>
+                  <NavRow key={item.to} item={item} pathname={pathname} />
                 ))}
               </SidebarMenu>
             </SidebarGroupContent>
@@ -210,10 +202,37 @@ export function AppSidebar() {
   )
 }
 
+function NavRow({ item, pathname }: { item: NavItem; pathname: string }) {
+  if (item.soon) {
+    return (
+      <SidebarMenuItem>
+        <SidebarMenuButton
+          aria-disabled
+          className="cursor-default opacity-60 hover:bg-transparent hover:text-sidebar-foreground"
+        >
+          <HugeiconsIcon icon={item.icon} />
+          <span>{item.label}</span>
+        </SidebarMenuButton>
+        <SidebarMenuBadge>Soon</SidebarMenuBadge>
+      </SidebarMenuItem>
+    )
+  }
+  return (
+    <SidebarMenuItem>
+      <SidebarMenuButton asChild isActive={item.match(pathname)}>
+        <Link to={item.to}>
+          <HugeiconsIcon icon={item.icon} />
+          <span>{item.label}</span>
+        </Link>
+      </SidebarMenuButton>
+    </SidebarMenuItem>
+  )
+}
+
 function NavUser() {
   const user = useUser()
-  const { isMobile } = useSidebar()
   const { resolvedTheme, setTheme } = useTheme()
+  const { setOpen: setShortcutsOpen } = useShortcutsDialog()
   const themeIcon = resolvedTheme === 'dark' ? Moon01Icon : Sun01Icon
 
   return (
@@ -239,20 +258,34 @@ function NavUser() {
           </DropdownMenuTrigger>
           <DropdownMenuContent
             className="w-(--radix-dropdown-menu-trigger-width) min-w-56 rounded-lg"
-            side={isMobile ? 'bottom' : 'right'}
+            side="top"
             align="end"
             sideOffset={4}
           >
-            <DropdownMenuItem asChild>
-              <a href="/account">
-                <HugeiconsIcon icon={UserCircleIcon} />
-                My account
-              </a>
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => setTheme(resolvedTheme === 'dark' ? 'light' : 'dark')}>
-              <HugeiconsIcon icon={themeIcon} />
-              Toggle theme
-            </DropdownMenuItem>
+            <DropdownMenuLabel className="p-0 font-normal">
+              <div className="flex items-center gap-2 px-1 py-1.5 text-left text-sm">
+                <Avatar className="size-8 rounded-md">
+                  <AvatarFallback className="rounded-md bg-secondary text-xs font-medium text-secondary-foreground">
+                    {user.initials}
+                  </AvatarFallback>
+                </Avatar>
+                <div className="grid flex-1 leading-tight">
+                  <span className="truncate text-sm font-medium">{user.name}</span>
+                  <span className="truncate text-xs text-muted-foreground">{user.email}</span>
+                </div>
+              </div>
+            </DropdownMenuLabel>
+            <DropdownMenuSeparator />
+            <DropdownMenuGroup>
+              <DropdownMenuItem onClick={() => setTheme(resolvedTheme === 'dark' ? 'light' : 'dark')}>
+                <HugeiconsIcon icon={themeIcon} />
+                Toggle theme
+              </DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => setShortcutsOpen(true)}>
+                <HugeiconsIcon icon={KeyboardIcon} />
+                Keyboard shortcuts
+              </DropdownMenuItem>
+            </DropdownMenuGroup>
             <DropdownMenuSeparator />
             <DropdownMenuItem asChild>
               <a href="/login">

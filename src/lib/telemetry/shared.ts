@@ -5,6 +5,14 @@ import { estimateCostUsd } from '#/lib/llm-pricing'
 import { pickCanonical, pickCanonicalNumber } from './conventions'
 import type { SessionSummary, SpansViewKind, ToolErrorRow, ToolPayloadRow } from './types'
 
+// Sessions are reconstructed from raw spans, so the scan has to pull every
+// row that could carry a session-identifying attribute. When the cap is hit
+// the provider returns `truncated: true` so the UI can warn the user.
+export const SESSION_SCAN_LIMIT = 10000
+// Hard cap on spans returned for one trace fetch. A trace exceeding this is
+// truncated and rendered partially.
+export const TRACE_FETCH_LIMIT = 5000
+
 // Spans-tab classifier. Backends return rows matched by either a non-null
 // purpose attr (utility) or `invoke_agent` nested under `execute_tool`
 // (sub-agent). Two providers feed the same UI, so the row → display fields
@@ -155,14 +163,14 @@ function rollupTrace(rows: Array<Record<string, unknown>>): Omit<TraceSession, '
   let userId: string | undefined
   let host: string | undefined
   let firstInput: string | undefined
-  let firstInputAtNs = Number.POSITIVE_INFINITY
+  let firstInputAtMs = Number.POSITIVE_INFINITY
   let tokens = 0
   let triggerType: string | undefined
   let cost = 0
   let hasError = false
   for (const h of rows) {
-    const s = Math.floor(Number(h.start_time ?? 0) / 1_000_000)
-    const e = Math.floor(Number(h.end_time ?? 0) / 1_000_000)
+    const s = Number(h.start_ms ?? 0)
+    const e = Number(h.end_ms ?? 0)
     if (s && s < startMs) startMs = s
     if (e > endMs) endMs = e
     if (typeof h.operation_name === 'string') {
@@ -193,12 +201,11 @@ function rollupTrace(rows: Array<Record<string, unknown>>): Omit<TraceSession, '
           spanStartMs: s,
         })
       if (c) cost += c
-      const startNs = Number(h.start_time ?? 0)
-      if (startNs && startNs < firstInputAtNs) {
+      if (s && s < firstInputAtMs) {
         const candidate = extractFirstUserText(pickCanonical(h, 'llmInput'))
         if (candidate) {
           firstInput = candidate
-          firstInputAtNs = startNs
+          firstInputAtMs = s
         }
       }
     }
@@ -265,6 +272,42 @@ export function num(v: unknown): number | undefined {
 // otherwise undefined. The multi-key variant is `pickString` above.
 export function pickStringValue(v: unknown): string | undefined {
   return typeof v === 'string' && v ? v : undefined
+}
+
+export function firstString(h: Record<string, unknown>, keys: readonly string[]): string | undefined {
+  for (const k of keys) {
+    const v = h[k]
+    if (typeof v === 'string' && v.length > 0) return v
+  }
+  return undefined
+}
+
+export function buildLogRecord(args: {
+  timestampMs: number
+  level: import('./types').LogLevel
+  message: string
+  source?: string
+  traceId?: string
+  spanId?: string
+  attributes?: Record<string, unknown>
+}): import('./types').LogRecord {
+  const record: import('./types').LogRecord = {
+    id: `${args.traceId ?? ''}-${args.spanId ?? ''}-${args.timestampMs}`,
+    timestampMs: args.timestampMs,
+    level: args.level,
+    message: args.message,
+  }
+  if (args.attributes) {
+    try {
+      record.attributes = JSON.parse(JSON.stringify(args.attributes))
+    } catch {
+      // skip if anything in the row resists JSON
+    }
+  }
+  if (args.source) record.source = args.source
+  if (args.traceId) record.traceId = args.traceId
+  if (args.spanId) record.spanId = args.spanId
+  return record
 }
 
 export function groupBy<T, K>(items: readonly T[], key: (item: T) => K): Map<K, T[]> {

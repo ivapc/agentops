@@ -6,6 +6,7 @@ import {
   PlayCircleIcon,
   PuzzleIcon,
   StickyNote01Icon,
+  Task01Icon,
   TestTubeIcon,
 } from '@hugeicons/core-free-icons'
 import { HugeiconsIcon } from '@hugeicons/react'
@@ -23,13 +24,16 @@ import {
   CommandList,
   CommandSeparator,
 } from '#/components/ui/command'
+import { Kbd } from '#/components/ui/kbd'
+import { useIsMac } from '#/hooks/use-is-mac'
 
-type NavTo = '/' | '/sessions' | '/traces' | '/mcp' | '/notes' | '/prompts' | '/evals' | '/inbox'
+type NavTo = '/' | '/sessions' | '/traces' | '/mcp' | '/notes' | '/prompts' | '/tasks' | '/evals' | '/inbox'
 
 const NAV_ITEMS: { to: NavTo; label: string; icon: typeof Home01Icon }[] = [
   { to: '/', label: 'Home', icon: Home01Icon },
   { to: '/sessions', label: 'Sessions', icon: MessageMultiple01Icon },
   { to: '/traces', label: 'Traces', icon: PlayCircleIcon },
+  { to: '/tasks', label: 'Tasks', icon: Task01Icon },
   { to: '/mcp', label: 'MCP', icon: PuzzleIcon },
   { to: '/notes', label: 'Notes', icon: StickyNote01Icon },
   { to: '/prompts', label: 'Prompts', icon: Edit02Icon },
@@ -167,19 +171,9 @@ function CommandPaletteDialog({ providers }: { providers: Record<string, SearchP
   )
 }
 
-function detectMac(): boolean {
-  if (typeof navigator === 'undefined') return false
-  const platform = (navigator as Navigator & { userAgentData?: { platform?: string } }).userAgentData?.platform
-  const source = platform ?? navigator.platform ?? navigator.userAgent
-  return source.toLowerCase().includes('mac')
-}
-
 export function CommandPaletteTrigger() {
   const { setOpen } = useCommandPalette()
-  const [isMac, setIsMac] = useState(false)
-  useEffect(() => {
-    setIsMac(detectMac())
-  }, [])
+  const isMac = useIsMac()
   return (
     <Button
       variant="link"
@@ -188,12 +182,9 @@ export function CommandPaletteTrigger() {
     >
       <IconSearch data-icon="inline-start" />
       Search
-      <kbd className="hidden h-5 select-none items-center gap-1 rounded border bg-muted px-1.5 font-medium text-[10px] sm:inline-flex">
-        <span className="text-xs" suppressHydrationWarning>
-          {isMac ? '⌘' : 'Ctrl'}
-        </span>
-        K
-      </kbd>
+      <Kbd className="hidden sm:inline-flex" suppressHydrationWarning>
+        <span className="text-xs">{isMac ? '⌘' : 'Ctrl'}</span>K
+      </Kbd>
     </Button>
   )
 }
