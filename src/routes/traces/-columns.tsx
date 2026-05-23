@@ -1,6 +1,7 @@
 import {
   Clock01Icon,
   Message01Icon,
+  Notification03Icon,
   RepeatIcon,
   Robot01Icon,
   Unlink01Icon,
@@ -20,6 +21,7 @@ const CATEGORY_LABELS: Record<TraceCategory, string> = {
   chat: 'Chat',
   'sub-agent': 'Sub-agent',
   scheduled: 'Scheduled',
+  event: 'Event',
   webhook: 'Webhook',
   background: 'Background',
   utility: 'Utility',
@@ -30,6 +32,7 @@ const CATEGORY_META: Record<TraceCategory, { icon: IconSvgElement; color: string
   chat: { icon: Message01Icon, color: 'text-blue-500 dark:text-blue-400' },
   'sub-agent': { icon: Robot01Icon, color: 'text-fuchsia-500 dark:text-fuchsia-400' },
   scheduled: { icon: Clock01Icon, color: 'text-amber-500 dark:text-amber-400' },
+  event: { icon: Notification03Icon, color: 'text-orange-500 dark:text-orange-400' },
   webhook: { icon: WebhookIcon, color: 'text-cyan-500 dark:text-cyan-400' },
   background: { icon: RepeatIcon, color: 'text-violet-500 dark:text-violet-400' },
   utility: { icon: Wrench01Icon, color: 'text-teal-500 dark:text-teal-400' },
@@ -55,21 +58,6 @@ export const traceColumns: ColumnDef<TraceSummary>[] = [
     filterFn: (row, _id, value: string[]) => {
       if (!Array.isArray(value) || value.length === 0) return true
       return value.includes(row.original.category ?? 'orphan')
-    },
-    enableSorting: false,
-    enableHiding: false,
-  },
-  {
-    id: 'hasSession',
-    accessorFn: (s) => (s.hasSessionAttribute ? 'yes' : 'no'),
-    header: () => null,
-    cell: () => null,
-    filterFn: (row, _id, value: string[]) => {
-      if (!Array.isArray(value) || value.length === 0) return true
-      // Utility purpose-spans and sub-agent spans always pass — they're surfaced individually
-      const cat = row.original.category
-      if (cat === 'utility' || cat === 'sub-agent') return true
-      return value.includes(row.original.hasSessionAttribute ? 'yes' : 'no')
     },
     enableSorting: false,
     enableHiding: false,

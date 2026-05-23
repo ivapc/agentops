@@ -13,8 +13,8 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip
 import type { Span } from '#/lib/spans'
 import { categorizeFromSpans } from '#/lib/telemetry/trace-category'
 import { serialize, type TimeRange } from '#/lib/time-range'
-import { SessionContextView } from './context'
 import { SessionInspectLayout } from './overview'
+import { useSpanSearch } from './use-span-search'
 import { type SessionInspectView, SessionViewBar } from './view-bar'
 
 export { SESSION_VIEW_TABS, type SessionInspectView } from './view-bar'
@@ -56,7 +56,15 @@ export function SessionInspectDrawer({
   const [drawerView, setDrawerView] = useState<DrawerView>('spans')
   const [contentReady, setContentReady] = useState(false)
   const [fullSpans, setFullSpans] = useState(false)
-  const [paletteOpen, setPaletteOpen] = useState(false)
+
+  useSpanSearch({
+    spans: open ? spans : [],
+    fullSpans,
+    onSelect: (id) => {
+      setSelectedId(id)
+      setDrawerView('spans')
+    },
+  })
 
   const category = useMemo(() => (spans.length > 0 ? categorizeFromSpans(spans) : undefined), [spans])
   const isUtility = category === 'utility'
@@ -96,18 +104,6 @@ export function SessionInspectDrawer({
     const chatSpan = spans.find((s) => s.operation === 'chat')
     if (chatSpan) setSelectedId(chatSpan.id)
   }, [isUtility, spans, selectedId])
-
-  useEffect(() => {
-    if (!open || drawerView !== 'spans') return
-    const onKey = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
-        e.preventDefault()
-        setPaletteOpen((prev) => !prev)
-      }
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [open, drawerView])
 
   useEffect(() => {
     let frame = 0
@@ -199,7 +195,6 @@ export function SessionInspectDrawer({
           onViewChange={setDrawerView}
           fullSpans={fullSpans}
           onFullSpansChange={setFullSpans}
-          onOpenPalette={() => setPaletteOpen(true)}
           autoRefresh={autoRefresh}
           onAutoRefreshChange={onAutoRefreshChange}
           onRefresh={onRefresh}
@@ -222,16 +217,6 @@ export function SessionInspectDrawer({
                 <ConversationView spans={spans} onSelect={setSelectedId} />
               )}
             </section>
-          ) : drawerView === 'context' ? (
-            <section className="min-h-0 flex-1 overflow-hidden">
-              {!contentReady || (loading && spans.length === 0) ? (
-                <div className="flex h-full items-center justify-center text-xs text-muted-foreground">
-                  <HugeiconsIcon icon={Loading03Icon} strokeWidth={2} className="size-3.5 animate-spin" />
-                </div>
-              ) : (
-                <SessionContextView spans={spans} />
-              )}
-            </section>
           ) : (
             <div className="flex min-h-0 flex-1">
               <SessionInspectLayout
@@ -241,8 +226,6 @@ export function SessionInspectDrawer({
                 selectedId={selectedId}
                 onSelect={setSelectedId}
                 fullSpans={fullSpans}
-                paletteOpen={paletteOpen}
-                onPaletteOpenChange={setPaletteOpen}
               />
             </div>
           )}

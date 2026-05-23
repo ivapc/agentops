@@ -15,8 +15,8 @@ import {
 } from '#/components/ui/breadcrumb'
 import type { Span } from '#/lib/spans'
 
-import { SessionContextView } from '#/routes/sessions/-components/session-inspect/context'
 import { SessionInspectLayout } from '#/routes/sessions/-components/session-inspect/overview'
+import { useSpanSearch } from '#/routes/sessions/-components/session-inspect/use-span-search'
 import { type SessionInspectView, SessionViewBar } from '#/routes/sessions/-components/session-inspect/view-bar'
 import { traceSpansQuery } from './-data'
 
@@ -40,7 +40,6 @@ function TraceDetail() {
   const [view, setView] = useState<SessionInspectView>('spans')
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [fullSpans, setFullSpans] = useState(false)
-  const [paletteOpen, setPaletteOpen] = useState(false)
 
   // Auto-select the focused span (from sub-agent/purpose click), or first chat span.
   useEffect(() => {
@@ -53,17 +52,14 @@ function TraceDetail() {
     }
   }, [spans, focusSpanId])
 
-  useEffect(() => {
-    if (view !== 'spans') return
-    const onKey = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
-        e.preventDefault()
-        setPaletteOpen((prev) => !prev)
-      }
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [view])
+  useSpanSearch({
+    spans,
+    fullSpans,
+    onSelect: (id) => {
+      setSelectedId(id)
+      setView('spans')
+    },
+  })
 
   return (
     <div className="flex h-full flex-col">
@@ -106,14 +102,11 @@ function TraceDetail() {
           onViewChange={setView}
           fullSpans={fullSpans}
           onFullSpansChange={setFullSpans}
-          onOpenPalette={() => setPaletteOpen(true)}
           extras={view === 'conversation' && spans.length > 0 ? <ContextWindow spans={spans} /> : undefined}
         />
         <div className="min-h-0 flex-1 overflow-hidden bg-background">
           {view === 'conversation' ? (
             <ConversationView spans={spans} onSelect={setSelectedId} />
-          ) : view === 'context' ? (
-            <SessionContextView spans={spans} />
           ) : spans.length > 0 ? (
             <SessionInspectLayout
               spans={spans}
@@ -121,8 +114,6 @@ function TraceDetail() {
               selectedId={selectedId}
               onSelect={setSelectedId}
               fullSpans={fullSpans}
-              paletteOpen={paletteOpen}
-              onPaletteOpenChange={setPaletteOpen}
             />
           ) : (
             <div className="flex h-full items-center justify-center text-muted-foreground">

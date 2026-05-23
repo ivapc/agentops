@@ -18,8 +18,36 @@ export type TraceFetch = { spans: Span[]; truncated?: boolean; focusSpanId?: str
 
 export type GetTraceOpts = WindowOpts & IdentityFilter
 export type ListTracesOpts = ListOpts & IdentityFilter
+export type ListSpansOpts = ListOpts & IdentityFilter
 
-export type TraceCategory = 'chat' | 'sub-agent' | 'scheduled' | 'webhook' | 'background' | 'utility' | 'orphan'
+export type SpansViewKind = 'utility' | 'sub-agent'
+
+export interface SpanSummary {
+  spanId: string
+  traceId: string
+  spanName: string
+  kind: SpansViewKind
+  label: string // purpose name for utility, agent base-name for sub-agent
+  startedAtMs: number
+  durationMs: number
+  totalTokens?: number
+  totalCostUsd?: number
+  modelId?: string
+  serviceName?: string
+  hasError?: boolean
+  userId?: string
+  userName?: string
+}
+
+export type TraceCategory =
+  | 'chat'
+  | 'sub-agent'
+  | 'scheduled'
+  | 'event'
+  | 'webhook'
+  | 'background'
+  | 'utility'
+  | 'orphan'
 
 export interface TraceSummary {
   id: string
@@ -30,7 +58,7 @@ export interface TraceSummary {
   // Lifted from span attrs — the user-emitted run context that lets the trace
   // list show what a run *is*, not just "which agent name appeared first".
   serviceName?: string // OTel `service.name` — the app that emitted the run
-  sessionId?: string // AG-UI `ag_ui_thread_id` (and later: `session.id`, `langfuse.trace.session.id`)
+  sessionId?: string // session attribute (e.g. `ag_ui.thread_id`, `session.id`, `gen_ai.conversation.id`)
   totalTokens?: number
   totalCostUsd?: number
   hasError?: boolean
@@ -148,6 +176,7 @@ interface BaseProvider {
   fingerprint: string
   getTrace(traceId: string, opts?: GetTraceOpts): Promise<TraceFetch>
   listTraces?(opts?: ListTracesOpts): Promise<TraceSummary[]>
+  listSpans?(opts?: ListSpansOpts): Promise<SpanSummary[]>
   listSessions?(opts?: ListSessionsOpts): Promise<{ sessions: SessionSummary[]; truncated: boolean }>
   getSession?(sessionId: string, opts?: GetTraceOpts): Promise<SessionFetch>
   query(q: string, opts: WindowOpts & { size?: number }): Promise<Array<Record<string, unknown>>>

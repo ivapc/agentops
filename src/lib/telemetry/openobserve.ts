@@ -10,9 +10,17 @@ import {
 } from '#/lib/spans'
 import { ooCoalesceAs, ooColumns } from './conventions'
 import { readFieldConfig } from './field-config'
-import { aggregateSessions, groupBy, num, pickIdentityValue, pickStringValue } from './shared'
+import { aggregateSessions, classifySpanRow, groupBy, num, pickIdentityValue, pickStringValue } from './shared'
 import { classifyTraceCategory } from './trace-category'
-import type { GetTraceOpts, ListTracesOpts, OpenObserveProvider, SessionFetch, TraceSummary } from './types'
+import type {
+  GetTraceOpts,
+  ListSpansOpts,
+  ListTracesOpts,
+  OpenObserveProvider,
+  SessionFetch,
+  SpanSummary,
+  TraceSummary,
+} from './types'
 
 export interface OpenObserveConfig {
   baseUrl: string
@@ -169,6 +177,7 @@ export function createOpenObserveProvider(cfg: OpenObserveConfig): OpenObservePr
           ${ooCoalesceAs('costUsd', 'llm_usage_cost_total', { known, extras: LLM_COST_EXTRAS })},
           ${ooCoalesceAs('inputTokens', 'gen_ai_usage_input_tokens', { known })},
           ${ooCoalesceAs('outputTokens', 'gen_ai_usage_output_tokens', { known })},
+          ${known.has('session_trigger_type') ? `session_trigger_type AS trigger_type,` : ''}
           span_status,
           service_name
         FROM "${cfg.stream}"
@@ -269,16 +278,35 @@ export function createOpenObserveProvider(cfg: OpenObserveConfig): OpenObservePr
           MAX(CASE WHEN gen_ai_operation_name = 'chat' THEN 1 ELSE 0 END) AS has_chat,
           ${sessionKindCol ? `MAX(${sessionKindCol}) AS session_kind,` : ''}
           ${llmPurposeCol ? `MAX(CASE WHEN reference_parent_span_id IS NULL THEN ${llmPurposeCol} END) AS root_llm_purpose,` : ''}
-          ${has('session_trigger_type') ? `MAX(CASE WHEN reference_parent_span_id IS NULL THEN session_trigger_type END) AS root_trigger_type,` : ''}
-          ${has('session_execution') ? `MAX(CASE WHEN reference_parent_span_id IS NULL THEN session_execution END) AS root_execution,` : ''}
+          ${
+            has('session_trigger_type')
+              ? `COALESCE(
+            MAX(CASE WHEN reference_parent_span_id IS NULL THEN session_trigger_type END),
+            MAX(CASE WHEN operation_name LIKE 'invoke_agent %' AND session_trigger_type IS NOT NULL THEN session_trigger_type END)
+          ) AS root_trigger_type,`
+              : ''
+          }
+          ${
+            has('session_execution')
+              ? `COALESCE(
+            MAX(CASE WHEN reference_parent_span_id IS NULL THEN session_execution END),
+            MAX(CASE WHEN operation_name LIKE 'invoke_agent %' AND session_execution IS NOT NULL THEN session_execution END)
+          ) AS root_execution,`
+              : ''
+          }
           MAX(CASE WHEN reference_parent_span_id IS NULL THEN operation_name END) AS root_operation,
           ${maxOf(uidCols)} AS trace_user_id,
           ${maxOf(unameCols)} AS trace_user_name
         FROM "${cfg.stream}"
-        WHERE gen_ai_operation_name IS NOT NULL
+        WHERE (gen_ai_operation_name IS NOT NULL
            OR operation_name LIKE 'invoke_agent %'
            OR operation_name LIKE 'execute_tool %'
            OR session_trigger_type IS NOT NULL
+           ${(() => {
+             const purposeCol = llmPurposeCol ?? 'gen_ai_operation_purpose'
+             return has(purposeCol) ? `OR ${purposeCol} IS NOT NULL` : ''
+           })()})
+          AND operation_name NOT LIKE 'tools/%'
         GROUP BY trace_id
         ORDER BY first_seen DESC
         LIMIT ${limit}
@@ -287,10 +315,53 @@ export function createOpenObserveProvider(cfg: OpenObserveConfig): OpenObservePr
       const hits = await runWithSchema((known) => search(buildSql(known), fromUs, toUs, limit))
       return hits.map(hitToSummary)
     },
+
+    async listSpans(opts): Promise<SpanSummary[]> {
+      const { fromUs, toUs } = window(opts)
+      const limit = opts?.limit ?? DEFAULT_LIST_LIMIT
+      const purposeCol = llmPurposeCol ?? 'gen_ai_operation_purpose'
+      const buildSql = (known: ReadonlySet<string>) => {
+        const hasPurposeCol = known.has(purposeCol)
+        const userPredicate = identityPredicate(opts, known)
+        const utilityClause = hasPurposeCol
+          ? `(${purposeCol} IS NOT NULL AND reference_parent_span_id IS NOT NULL)`
+          : null
+        const subAgentClause = `(
+          operation_name LIKE 'invoke_agent %'
+          AND reference_parent_span_id IN (
+            SELECT span_id FROM "${cfg.stream}" WHERE operation_name LIKE 'execute_tool %'
+          )
+        )`
+        const kindWhere = utilityClause ? `(${utilityClause} OR ${subAgentClause})` : subAgentClause
+        return `
+        SELECT
+          span_id,
+          trace_id,
+          operation_name AS span_name,
+          ${hasPurposeCol ? purposeCol : "''"} AS purpose,
+          start_time,
+          end_time,
+          ${ooCoalesceAs('totalTokens', 'total_tokens', { known })},
+          ${ooCoalesceAs('costUsd', 'cost_usd', { known, extras: LLM_COST_EXTRAS })},
+          gen_ai_request_model AS model_id,
+          service_name,
+          span_status,
+          ${ooCoalesceAs('userId', 'user_id', { known })},
+          ${ooCoalesceAs('userName', 'user_name', { known })}
+        FROM "${cfg.stream}"
+        WHERE ${kindWhere}
+        ${userPredicate ? `AND (${userPredicate})` : opts?.userId || opts?.userName ? 'AND 1 = 0' : ''}
+        ORDER BY start_time DESC
+        LIMIT ${limit}
+      `
+      }
+      const hits = await runWithSchema((known) => search(buildSql(known), fromUs, toUs, limit))
+      return hits.map(hitToSpanSummary)
+    },
   }
 }
 
-function window(opts: GetTraceOpts | ListTracesOpts | undefined): { fromUs: number; toUs: number } {
+function window(opts: GetTraceOpts | ListTracesOpts | ListSpansOpts | undefined): { fromUs: number; toUs: number } {
   const toUs = opts?.toUs ?? Date.now() * 1000
   const fromUs = opts?.fromUs ?? toUs - DEFAULT_WINDOW_US
   return { fromUs, toUs }
@@ -308,6 +379,33 @@ function identityPredicate(
 
 function sqlString(value: string): string {
   return `'${value.replaceAll("'", "''")}'`
+}
+
+function hitToSpanSummary(h: Record<string, unknown>): SpanSummary {
+  const startNs = Number(h.start_time ?? 0)
+  const endNs = Number(h.end_time ?? 0)
+  const spanName = String(h.span_name ?? '')
+  const purpose = typeof h.purpose === 'string' ? h.purpose : ''
+  const { kind, label } = classifySpanRow(spanName, purpose)
+  const summary: SpanSummary = {
+    spanId: String(h.span_id ?? ''),
+    traceId: String(h.trace_id ?? ''),
+    spanName,
+    kind,
+    label,
+    startedAtMs: Math.floor(startNs / 1_000_000),
+    durationMs: Math.max(0, Math.floor((endNs - startNs) / 1_000_000)),
+  }
+  const tokens = num(h.total_tokens)
+  if (tokens) summary.totalTokens = tokens
+  const cost = num(h.cost_usd)
+  if (cost) summary.totalCostUsd = cost
+  if (typeof h.model_id === 'string' && h.model_id) summary.modelId = h.model_id
+  if (typeof h.service_name === 'string' && h.service_name) summary.serviceName = h.service_name
+  if (h.span_status === 'ERROR') summary.hasError = true
+  if (typeof h.user_id === 'string' && h.user_id) summary.userId = h.user_id
+  if (typeof h.user_name === 'string' && h.user_name) summary.userName = h.user_name
+  return summary
 }
 
 function hitToSummary(h: Record<string, unknown>): TraceSummary {

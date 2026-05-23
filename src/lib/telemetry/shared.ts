@@ -3,7 +3,16 @@ import { asMessages } from '#/lib/conversation'
 import { parseJson } from '#/lib/json'
 import { estimateCostUsd } from '#/lib/llm-pricing'
 import { pickCanonical, pickCanonicalNumber } from './conventions'
-import type { SessionSummary, ToolErrorRow, ToolPayloadRow } from './types'
+import type { SessionSummary, SpansViewKind, ToolErrorRow, ToolPayloadRow } from './types'
+
+// Spans-tab classifier. Backends return rows matched by either a non-null
+// purpose attr (utility) or `invoke_agent` nested under `execute_tool`
+// (sub-agent). Two providers feed the same UI, so the row → display fields
+// mapping lives here.
+export function classifySpanRow(spanName: string, purpose: string): { kind: SpansViewKind; label: string } {
+  if (purpose) return { kind: 'utility', label: purpose }
+  return { kind: 'sub-agent', label: extractAgentName(spanName) || spanName }
+}
 
 export type IdentityFilter = { userId?: string; userName?: string }
 
@@ -88,6 +97,10 @@ export function aggregateSessions(hits: Array<Record<string, unknown>>, limit: n
     // A session is a producer-declared conversation grouping. Traces without
     // a session attribute belong on the Runs page, not here.
     if (s.source !== 'attribute') continue
+    // Sessions consisting solely of system-triggered traces (event/scheduled)
+    // are background work — don't surface them as user-facing sessions.
+    const hasUserTrace = traces.some((t) => !t.triggerType || t.triggerType === 'user')
+    if (!hasUserTrace) continue
     out.push(s)
   }
 
@@ -124,6 +137,7 @@ type TraceSession = {
   tokens: number
   cost: number
   hasError: boolean
+  triggerType?: string
 }
 
 function resolveTraceSession(traceId: string, rows: Array<Record<string, unknown>>): TraceSession | undefined {
@@ -143,6 +157,7 @@ function rollupTrace(rows: Array<Record<string, unknown>>): Omit<TraceSession, '
   let firstInput: string | undefined
   let firstInputAtNs = Number.POSITIVE_INFINITY
   let tokens = 0
+  let triggerType: string | undefined
   let cost = 0
   let hasError = false
   for (const h of rows) {
@@ -158,6 +173,10 @@ function rollupTrace(rows: Array<Record<string, unknown>>): Omit<TraceSession, '
     if (!userName) userName = pickCanonical(h, 'userName')
     if (!userId) userId = pickCanonical(h, 'userId')
     if (!host) host = pickCanonical(h, 'host') ?? pickString(h, ['service_name'])
+    if (!triggerType) {
+      const tt = typeof h.trigger_type === 'string' ? h.trigger_type : undefined
+      if (tt) triggerType = tt
+    }
     if (h.gen_ai_operation_name === 'chat') {
       const inp = pickCanonicalNumber(h, 'inputTokens') ?? 0
       const out = pickCanonicalNumber(h, 'outputTokens') ?? 0
@@ -205,6 +224,7 @@ function rollupTrace(rows: Array<Record<string, unknown>>): Omit<TraceSession, '
     tokens,
     cost,
     hasError,
+    triggerType,
   }
 }
 

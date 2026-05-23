@@ -1,17 +1,8 @@
 import { ChevronDownIcon, ChevronRightIcon } from '@heroicons/react/16/solid'
 import { Clock01Icon } from '@hugeicons/core-free-icons'
 import { HugeiconsIcon } from '@hugeicons/react'
-import { useCallback, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Badge } from '#/components/ui/badge'
-import {
-  Command,
-  CommandDialog,
-  CommandEmpty,
-  CommandGroup,
-  CommandInput,
-  CommandItem,
-  CommandList,
-} from '#/components/ui/command'
 import { buildAgentLabels, type Span, spanHasError } from '#/lib/spans'
 import { displayFor, fmtNum, formatDuration } from './shared'
 
@@ -26,6 +17,7 @@ interface Row {
   isCollapsed: boolean
   subtreeTokens: number
   subtreeCost: number
+  isParallel: boolean
 }
 
 const INDENT = 22
@@ -55,7 +47,7 @@ function buildRows(spans: Span[], collapsedIds: Set<string>, fullSpans: boolean)
     if (visibleChildren.has(parentId)) return visibleChildren.get(parentId) as Span[]
     const out: Span[] = []
     for (const span of byParent.get(parentId) ?? []) {
-      if (!fullSpans && span.operation === 'http') out.push(...collect(span.id))
+      if (!fullSpans && (span.operation === 'http' || span.operation === 'mcp')) out.push(...collect(span.id))
       else out.push(span)
     }
     visibleChildren.set(parentId, out)
@@ -84,6 +76,27 @@ function buildRows(spans: Span[], collapsedIds: Set<string>, fullSpans: boolean)
   // own last-status) doesn't correspond to a rail column — roots have no shared rail.
   const walk = (parentId: string | null, ancestorHasNext: boolean[]) => {
     const siblings = collect(parentId)
+    // Detect parallel execution: tool siblings that started at approximately
+    // the same time (dispatched concurrently by the framework). Only tool spans
+    // can be parallel — LLM calls are always sequential in an agent loop.
+    const parallelIds = new Set<string>()
+    const toolSiblings = siblings.filter((s) => s.operation === 'tool' || s.operation === 'mcp')
+    for (let i = 0; i < toolSiblings.length; i++) {
+      for (let j = i + 1; j < toolSiblings.length; j++) {
+        const gap = Math.abs(toolSiblings[j].startMs - toolSiblings[i].startMs)
+        const longer = Math.max(
+          toolSiblings[i].endMs - toolSiblings[i].startMs,
+          toolSiblings[j].endMs - toolSiblings[j].startMs,
+        )
+        // Parallel = started within 10% of the longer tool's duration (generous),
+        // with an absolute max of 500ms for very long tools.
+        const threshold = Math.min(Math.max(100, longer * 0.1), 500)
+        if (gap < threshold) {
+          parallelIds.add(toolSiblings[i].id)
+          parallelIds.add(toolSiblings[j].id)
+        }
+      }
+    }
     siblings.forEach((span, i) => {
       const isLast = i === siblings.length - 1
       const totals = agg(span)
@@ -97,6 +110,7 @@ function buildRows(spans: Span[], collapsedIds: Set<string>, fullSpans: boolean)
         isCollapsed: collapsedIds.has(span.id),
         subtreeTokens: totals.tokens,
         subtreeCost: totals.cost,
+        isParallel: parallelIds.has(span.id),
       })
       if (!collapsedIds.has(span.id)) walk(span.id, [...ancestorHasNext, !isLast])
     })
@@ -110,18 +124,9 @@ interface SpanTreeListProps {
   selectedId: string | null
   onSelect: (id: string) => void
   fullSpans?: boolean
-  paletteOpen?: boolean
-  onPaletteOpenChange?: (open: boolean) => void
 }
 
-export function SpanTreeList({
-  spans,
-  selectedId,
-  onSelect,
-  fullSpans = false,
-  paletteOpen = false,
-  onPaletteOpenChange,
-}: SpanTreeListProps) {
+export function SpanTreeList({ spans, selectedId, onSelect, fullSpans = false }: SpanTreeListProps) {
   const [collapsedIds, setCollapsedIds] = useState(() => new Set<string>())
   const rows = useMemo(() => buildRows(spans, collapsedIds, fullSpans), [spans, collapsedIds, fullSpans])
   const agentLabels = useMemo(() => buildAgentLabels(spans), [spans])
@@ -135,99 +140,51 @@ export function SpanTreeList({
     })
   }
 
-  const paletteItems = useMemo(() => {
+  // When selection changes (e.g. from the command palette or URL), expand any
+  // collapsed ancestors and scroll the row into view.
+  const lastRevealedRef = useRef<string | null>(null)
+  useEffect(() => {
+    if (!selectedId || selectedId === lastRevealedRef.current) return
     const byId = new Map(spans.map((s) => [s.id, s]))
-    const visible = fullSpans ? spans : spans.filter((s) => s.operation !== 'http')
-    return visible.map((span) => {
-      const parent = span.parentId ? byId.get(span.parentId) : undefined
-      const display = displayFor(span, agentLabels)
-      const parentDisplay = parent ? displayFor(parent, agentLabels) : undefined
-      return { span, display, parentName: parentDisplay?.name }
+    const target = byId.get(selectedId)
+    if (!target) return
+    lastRevealedRef.current = selectedId
+
+    const ancestorIds: string[] = []
+    for (let pid = target.parentId; pid; pid = byId.get(pid)?.parentId ?? null) {
+      ancestorIds.push(pid)
+    }
+    setCollapsedIds((prev) => {
+      if (!ancestorIds.some((id) => prev.has(id))) return prev
+      const next = new Set(prev)
+      for (const id of ancestorIds) next.delete(id)
+      return next
     })
-  }, [spans, fullSpans, agentLabels])
+    requestAnimationFrame(() => {
+      document.querySelector(`[data-span-id="${selectedId}"]`)?.scrollIntoView({ block: 'center' })
+    })
+  }, [selectedId, spans])
 
-  const handlePaletteSelect = useCallback(
-    (id: string) => {
-      const byId = new Map(spans.map((s) => [s.id, s]))
-      setCollapsedIds((prev) => {
-        const next = new Set(prev)
-        let cursor: Span | undefined = byId.get(id)
-        while (cursor?.parentId) {
-          next.delete(cursor.parentId)
-          cursor = byId.get(cursor.parentId)
-        }
-        return next
-      })
-      onSelect(id)
-      onPaletteOpenChange?.(false)
-      requestAnimationFrame(() => {
-        document.querySelector(`[data-span-id="${id}"]`)?.scrollIntoView({ block: 'center' })
-      })
-    },
-    [spans, onSelect, onPaletteOpenChange],
-  )
-
+  if (rows.length === 0) {
+    return (
+      <div className="flex h-full items-center justify-center px-3 text-center text-xs text-muted-foreground/70">
+        No spans in this session.
+      </div>
+    )
+  }
   return (
-    <>
-      {rows.length === 0 ? (
-        <div className="flex h-full items-center justify-center px-3 text-center text-xs text-muted-foreground/70">
-          No spans in this session.
-        </div>
-      ) : (
-        <ul className="py-1">
-          {rows.map((row) => (
-            <SpanTreeRow
-              key={row.span.id}
-              row={row}
-              selected={row.span.id === selectedId}
-              onSelect={() => onSelect(row.span.id)}
-              onToggleCollapse={() => toggleCollapsed(row.span.id)}
-              agentLabels={agentLabels}
-            />
-          ))}
-        </ul>
-      )}
-      <CommandDialog open={paletteOpen} onOpenChange={(o) => onPaletteOpenChange?.(o)} title="Jump to span">
-        <Command>
-          <CommandInput placeholder="Find a span by name, model, or tool…" />
-          <CommandList>
-            <CommandEmpty>No spans match.</CommandEmpty>
-            <CommandGroup>
-              {paletteItems.map(({ span, display, parentName }) => (
-                <CommandItem
-                  key={span.id}
-                  value={`${display.tagLabel} ${display.name} ${display.purposeLabel ?? ''} ${parentName ?? ''} ${span.model ?? ''} ${span.id}`}
-                  onSelect={() => handlePaletteSelect(span.id)}
-                >
-                  {display.tagLabel && (
-                    <Badge variant="outline" className="px-1.5 text-muted-foreground">
-                      {display.tagIcon && (
-                        <HugeiconsIcon
-                          icon={display.tagIcon}
-                          strokeWidth={1.5}
-                          className={`size-3 ${display.tagColor ?? ''}`}
-                          aria-hidden
-                        />
-                      )}
-                      {display.tagLabel}
-                    </Badge>
-                  )}
-                  <span className="min-w-0 flex-1 truncate">{display.name}</span>
-                  {display.purposeLabel && (
-                    <span className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium ${display.purposeCls}`}>
-                      {display.purposeLabel}
-                    </span>
-                  )}
-                  {parentName && (
-                    <span className="ml-auto shrink-0 truncate text-[11px] text-muted-foreground">in {parentName}</span>
-                  )}
-                </CommandItem>
-              ))}
-            </CommandGroup>
-          </CommandList>
-        </Command>
-      </CommandDialog>
-    </>
+    <ul className="py-1">
+      {rows.map((row) => (
+        <SpanTreeRow
+          key={row.span.id}
+          row={row}
+          selected={row.span.id === selectedId}
+          onSelect={() => onSelect(row.span.id)}
+          onToggleCollapse={() => toggleCollapsed(row.span.id)}
+          agentLabels={agentLabels}
+        />
+      ))}
+    </ul>
   )
 }
 
@@ -240,7 +197,7 @@ interface SpanTreeRowProps {
 }
 
 function SpanTreeRow({ row, selected, onSelect, onToggleCollapse, agentLabels }: SpanTreeRowProps) {
-  const { span, depth, railHasNext, isLastChild, childCount, isCollapsed, subtreeTokens } = row
+  const { span, depth, railHasNext, isLastChild, childCount, isCollapsed, subtreeTokens, isParallel } = row
   // Column ends right at chevron's right edge — no trailing whitespace inside the indent area.
   const indentWidth = railX(depth) + HANDLE / 2
   // All three indicator-axis decorations (below-circle vertical, handle button, leaf dot) anchor here.
@@ -356,6 +313,11 @@ function SpanTreeRow({ row, selected, onSelect, onToggleCollapse, agentLabels }:
             {errored && (
               <span className="shrink-0 rounded bg-destructive/10 px-1.5 py-0.5 text-[10px] font-medium text-destructive">
                 error
+              </span>
+            )}
+            {isParallel && (
+              <span className="shrink-0 rounded bg-indigo-500/10 px-1.5 py-0.5 text-[10px] font-medium text-indigo-600 dark:text-indigo-400">
+                ⫽ parallel
               </span>
             )}
             {depth === 0 &&
