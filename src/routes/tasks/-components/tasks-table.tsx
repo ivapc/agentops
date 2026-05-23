@@ -20,25 +20,20 @@ import { DataTableToolbar, type FacetedFilterSpec } from '#/components/data-tabl
 import { Button } from '#/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '#/components/ui/select'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '#/components/ui/table'
-import { useScopeToMe, useUserId } from '#/hooks/use-user'
-import type { TraceSummary } from '#/lib/telemetry'
+import type { TaskRow } from '#/lib/tasks/rollup'
 import type { TimeRange } from '#/lib/time-range'
 import { cn } from '#/lib/utils'
-import { traceColumns } from './-columns'
+import { taskColumns } from '../-columns'
 
 const FILTERS: FacetedFilterSpec[] = [
   {
-    columnId: 'category',
-    title: 'Category',
+    columnId: 'kind',
+    title: 'Kind',
     options: [
-      { label: 'Chat', value: 'chat' },
-      { label: 'Sub-agent', value: 'sub-agent' },
-      { label: 'Scheduled', value: 'scheduled' },
+      { label: 'Cron', value: 'cron' },
+      { label: 'One-shot', value: 'one_shot' },
       { label: 'Event', value: 'event' },
-      { label: 'Webhook', value: 'webhook' },
       { label: 'Background', value: 'background' },
-      { label: 'Utility', value: 'utility' },
-      { label: 'Orphan', value: 'orphan' },
     ],
   },
   {
@@ -51,10 +46,10 @@ const FILTERS: FacetedFilterSpec[] = [
   },
 ]
 
-interface TracesDataTableProps {
-  data: TraceSummary[]
+interface TasksDataTableProps {
+  data: TaskRow[]
   isLoading?: boolean
-  onRowClick?: (row: TraceSummary) => void
+  onRowClick?: (row: TaskRow) => void
   range: TimeRange
   onRangeChange: (range: TimeRange) => void
   autoRefresh: AutoRefreshInterval
@@ -63,7 +58,7 @@ interface TracesDataTableProps {
   refreshing?: boolean
 }
 
-export function TracesDataTable({
+export function TasksDataTable({
   data,
   isLoading,
   onRowClick,
@@ -73,30 +68,19 @@ export function TracesDataTable({
   onAutoRefreshChange,
   onRefresh,
   refreshing,
-}: TracesDataTableProps) {
-  const [userId] = useUserId()
-  const [scopeToMe] = useScopeToMe()
+}: TasksDataTableProps) {
   const [columnVisibility, setColumnVisibility] = React.useState<VisibilityState>({
     status: false,
-    category: false,
   })
   const [columnFilters, setColumnFilters] = React.useState<ColumnFiltersState>([])
-  const [sorting, setSorting] = React.useState<SortingState>([])
-  const [pagination, setPagination] = React.useState({
-    pageIndex: 0,
-    pageSize: 50,
-  })
+  const [sorting, setSorting] = React.useState<SortingState>([{ id: 'fires', desc: true }])
+  const [pagination, setPagination] = React.useState({ pageIndex: 0, pageSize: 50 })
 
   const table = useReactTable({
     data,
-    columns: traceColumns,
-    state: {
-      sorting,
-      columnVisibility,
-      columnFilters,
-      pagination,
-    },
-    getRowId: (row) => row.id,
+    columns: taskColumns,
+    state: { sorting, columnVisibility, columnFilters, pagination },
+    getRowId: (row) => row.key,
     onSortingChange: setSorting,
     onColumnFiltersChange: setColumnFilters,
     onColumnVisibilityChange: setColumnVisibility,
@@ -113,8 +97,8 @@ export function TracesDataTable({
     <div className="flex h-full w-full flex-col">
       <DataTableToolbar
         table={table}
-        searchColumnId="id"
-        searchPlaceholder="Search traces, agents, users…"
+        searchColumnId="name"
+        searchPlaceholder="Search tasks, schedules, agents…"
         filters={FILTERS}
         range={range}
         onRangeChange={onRangeChange}
@@ -158,7 +142,7 @@ export function TracesDataTable({
                 ))
               ) : (
                 <TableRow className="hover:bg-transparent">
-                  <TableCell colSpan={traceColumns.length} className="h-48">
+                  <TableCell colSpan={taskColumns.length} className="h-48">
                     <div className="flex h-full items-center justify-center">
                       {isLoading ? (
                         <HugeiconsIcon
@@ -166,15 +150,8 @@ export function TracesDataTable({
                           strokeWidth={2}
                           className="size-4 animate-spin text-muted-foreground"
                         />
-                      ) : scopeToMe && userId ? (
-                        <div className="max-w-md space-y-1 text-center text-muted-foreground">
-                          <div>
-                            No traces for <span className="font-mono text-foreground">{userId}</span>.
-                          </div>
-                          <div className="text-xs">Turn off scope-to-me in Settings → Account to see all traces.</div>
-                        </div>
                       ) : (
-                        <div className="text-muted-foreground">No traces in this window.</div>
+                        <div className="text-muted-foreground">No tasks fired in this window.</div>
                       )}
                     </div>
                   </TableCell>
