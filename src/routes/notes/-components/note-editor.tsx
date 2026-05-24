@@ -1,9 +1,11 @@
-import { Delete02Icon, Edit02Icon } from '@hugeicons/core-free-icons'
+import { CheckmarkCircle02Icon, CopyLinkIcon, Delete02Icon, Edit02Icon, ReloadIcon } from '@hugeicons/core-free-icons'
 import { HugeiconsIcon } from '@hugeicons/react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { toast } from 'sonner'
 import { Markdown } from '#/components/markdown'
+import { RelativeTime } from '#/components/relative-time'
+import { Badge } from '#/components/ui/badge'
 import { Button } from '#/components/ui/button'
 import {
   Dialog,
@@ -17,10 +19,9 @@ import { Skeleton } from '#/components/ui/skeleton'
 import { Textarea } from '#/components/ui/textarea'
 import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip'
 import { useUser } from '#/hooks/use-user'
-import { formatAgo } from '#/lib/format'
 import { queryKeys } from '#/lib/query-keys'
 import { cn } from '#/lib/utils'
-import { deleteNote, getNoteForTarget, upsertNote } from '#/server/notes'
+import { deleteNote, getNoteForTarget, setNoteStatus, upsertNote } from '#/server/notes'
 import type { NoteTargetKind } from '../-types'
 
 type Props = {
@@ -28,28 +29,9 @@ type Props = {
   targetId: string
   parentTraceId?: string | null
   parentSessionId?: string | null
-  compact?: boolean
-  variant?: 'default' | 'inline'
-  emptyLabel?: string
 }
 
-const KIND_LABEL: Record<NoteTargetKind, string> = {
-  session: 'session',
-  trace: 'trace',
-  span: 'span',
-  prompt: 'prompt',
-  experiment: 'experiment',
-}
-
-export function NoteEditor({
-  targetKind,
-  targetId,
-  parentTraceId,
-  parentSessionId,
-  compact = false,
-  variant = 'default',
-  emptyLabel,
-}: Props) {
+export function NoteEditor({ targetKind, targetId, parentTraceId, parentSessionId }: Props) {
   const user = useUser()
   const queryClient = useQueryClient()
   const {
@@ -64,10 +46,6 @@ export function NoteEditor({
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState('')
   const [deleteOpen, setDeleteOpen] = useState(false)
-
-  useEffect(() => {
-    if (!editing) setDraft(note?.body ?? '')
-  }, [note, editing])
 
   const invalidate = async () => {
     await Promise.all([
@@ -106,10 +84,18 @@ export function NoteEditor({
     },
   })
 
+  const statusMutation = useMutation({
+    mutationFn: (input: { id: number; status: 'open' | 'resolved' }) => setNoteStatus({ data: input }),
+    onSuccess: async (next) => {
+      await invalidate()
+      toast.success(next.status === 'resolved' ? 'Note resolved' : 'Note reopened')
+    },
+  })
+
   if (isLoading) {
     return (
-      <div className={cn('flex flex-col gap-2', compact ? 'py-1' : 'py-2')}>
-        <Skeleton className={compact ? 'h-12 w-full' : 'h-20 w-full'} />
+      <div className="flex flex-col gap-2 py-2">
+        <Skeleton className="h-20 w-full" />
       </div>
     )
   }
@@ -124,17 +110,17 @@ export function NoteEditor({
     setEditing(false)
   }
 
-  if (editing || (!note && draft)) {
+  if (editing) {
     return (
-      <div className={cn('flex flex-col gap-2', compact ? 'py-1' : 'py-2')}>
+      <div className="flex flex-col gap-2 py-2">
         <Textarea
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
           placeholder="Write a note. Markdown supported."
-          rows={compact ? 3 : 6}
+          rows={6}
           autoFocus
         />
-        <div className={cn('flex items-center', compact ? 'gap-1.5' : 'gap-2')}>
+        <div className="flex items-center gap-2">
           <Button size="sm" onClick={handleSave} disabled={saveMutation.isPending || !draft.trim()}>
             {saveMutation.isPending ? 'Saving…' : 'Save'}
           </Button>
@@ -147,30 +133,8 @@ export function NoteEditor({
   }
 
   if (!note) {
-    if (variant === 'inline') {
-      return (
-        <div className="flex items-center justify-between gap-3 text-xs text-muted-foreground">
-          <span>{emptyLabel ?? `Add a note about this ${KIND_LABEL[targetKind]}`}</span>
-          <Button
-            size="sm"
-            variant="ghost"
-            onClick={() => {
-              setDraft('')
-              setEditing(true)
-            }}
-          >
-            Add
-          </Button>
-        </div>
-      )
-    }
     return (
-      <div
-        className={cn(
-          'flex items-center justify-between gap-3 rounded-lg border border-dashed text-xs text-muted-foreground',
-          compact ? 'px-3 py-2' : 'px-4 py-3',
-        )}
-      >
+      <div className="flex items-center justify-between gap-3 rounded-lg border border-dashed px-4 py-3 text-xs text-muted-foreground">
         <span>No note yet.</span>
         <Button
           size="sm"
@@ -186,20 +150,63 @@ export function NoteEditor({
     )
   }
 
+  const isResolved = note.status === 'resolved'
+  const toggleStatus = () => {
+    statusMutation.mutate({ id: note.id, status: isResolved ? 'open' : 'resolved' })
+  }
+
+  const copyLink = async () => {
+    if (typeof window === 'undefined') return
+    const url = `${window.location.origin}/notes?note=${note.id}`
+    try {
+      await navigator.clipboard.writeText(url)
+      toast.success('Link copied')
+    } catch {
+      toast.error('Could not copy link')
+    }
+  }
+
   return (
-    <div
-      className={cn(
-        'flex flex-col gap-2 rounded-lg border bg-card',
-        compact ? 'px-3 py-2' : 'px-4 py-3',
-        isFetching && 'opacity-80',
+    <div className={cn('flex flex-col gap-2 rounded-lg border bg-card px-4 py-3', isFetching && 'opacity-80')}>
+      {isResolved && (
+        <div className="flex items-center gap-1.5">
+          <Badge variant="outline" className="gap-1 text-muted-foreground">
+            <HugeiconsIcon icon={CheckmarkCircle02Icon} strokeWidth={2} />
+            Resolved
+          </Badge>
+          {note.resolvedAt && <RelativeTime ts={note.resolvedAt} className="text-[11px] text-muted-foreground" />}
+        </div>
       )}
-    >
-      <Markdown>{note.body}</Markdown>
+      <div className={cn(isResolved && 'text-muted-foreground')}>
+        <Markdown>{note.body}</Markdown>
+      </div>
       <div className="flex items-center justify-between gap-2 border-border border-t pt-2 text-[11px] text-muted-foreground">
-        <span title={new Date(note.updatedAt).toLocaleString()}>
-          by {note.author} · {formatAgo(note.updatedAt)}
+        <span>
+          by {note.author} · <RelativeTime ts={note.updatedAt} />
         </span>
         <div className="flex items-center gap-0.5">
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                size="icon-sm"
+                variant="ghost"
+                aria-label={isResolved ? 'Reopen note' : 'Resolve note'}
+                disabled={statusMutation.isPending}
+                onClick={toggleStatus}
+              >
+                <HugeiconsIcon icon={isResolved ? ReloadIcon : CheckmarkCircle02Icon} strokeWidth={2} />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>{isResolved ? 'Reopen' : 'Resolve'}</TooltipContent>
+          </Tooltip>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button size="icon-sm" variant="ghost" aria-label="Copy link to note" onClick={copyLink}>
+                <HugeiconsIcon icon={CopyLinkIcon} strokeWidth={2} />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>Copy link</TooltipContent>
+          </Tooltip>
           <Tooltip>
             <TooltipTrigger asChild>
               <Button

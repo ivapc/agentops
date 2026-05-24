@@ -1,6 +1,7 @@
 import { Loading03Icon } from '@hugeicons/core-free-icons'
 import { HugeiconsIcon } from '@hugeicons/react'
 import { IconChevronLeft, IconChevronRight, IconChevronsLeft, IconChevronsRight } from '@tabler/icons-react'
+import { useQuery } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
 import {
   type ColumnFiltersState,
@@ -22,10 +23,12 @@ import { Button } from '#/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '#/components/ui/select'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '#/components/ui/table'
 import { useScopeToMe, useUserId } from '#/hooks/use-user'
+import { queryKeys } from '#/lib/query-keys'
 import type { SessionSummary } from '#/lib/telemetry'
 import type { TimeRange } from '#/lib/time-range'
 import { cn } from '#/lib/utils'
-import { sessionColumns } from './columns'
+import { getNoteFlagsForKind } from '#/server/notes'
+import { buildSessionColumns } from './columns'
 
 const FILTERS: FacetedFilterSpec[] = [
   {
@@ -73,9 +76,15 @@ export function DataTable({
     pageSize: 50,
   })
 
+  const { data: noteFlags } = useQuery({
+    queryKey: queryKeys.notes.flagsForKind('session'),
+    queryFn: () => getNoteFlagsForKind({ data: 'session' }),
+  })
+  const columns = React.useMemo(() => buildSessionColumns(noteFlags ?? {}), [noteFlags])
+
   const table = useReactTable({
     data,
-    columns: sessionColumns,
+    columns,
     state: {
       sorting,
       columnVisibility,
@@ -112,7 +121,7 @@ export function DataTable({
       <div className="flex min-h-0 flex-1 flex-col px-4 pb-4 md:pb-6 lg:px-6">
         <div className="min-h-0 flex-1 overflow-hidden overflow-y-auto rounded-lg border bg-background">
           <Table>
-            <TableHeader className="sticky top-0 z-10 bg-muted">
+            <TableHeader className="sticky top-0 z-10 bg-muted/40 [&_th]:font-normal [&_th]:text-muted-foreground [&_button]:font-normal [&_button]:text-muted-foreground">
               {table.getHeaderGroups().map((headerGroup) => (
                 <TableRow key={headerGroup.id} className="h-12">
                   {headerGroup.headers.map((header) => (
@@ -138,7 +147,7 @@ export function DataTable({
                 ))
               ) : (
                 <TableRow className="hover:bg-transparent">
-                  <TableCell colSpan={sessionColumns.length} className="h-48">
+                  <TableCell colSpan={columns.length} className="h-48">
                     <div className="flex h-full items-center justify-center">
                       {isLoading ? (
                         <HugeiconsIcon
@@ -157,10 +166,9 @@ export function DataTable({
                         <div className="max-w-md space-y-1 text-center text-pretty text-muted-foreground">
                           <div>No sessions in this window.</div>
                           <div className="text-xs">
-                            Set <code className="rounded bg-muted px-1 py-0.5 font-mono">ag_ui.thread_id</code> (or your
-                            configured{' '}
-                            <code className="rounded bg-muted px-1 py-0.5 font-mono">CUSTOM_SESSION_ID_FIELDS</code>) on
-                            the producer to enable session grouping. Individual traces appear on{' '}
+                            Set <code className="rounded bg-muted px-1 py-0.5 font-mono">gen_ai.conversation.id</code>{' '}
+                            or <code className="rounded bg-muted px-1 py-0.5 font-mono">ag_ui.thread_id</code> on the
+                            producer to enable session grouping. Individual traces appear on{' '}
                             <Link to="/traces" className="underline">
                               /traces
                             </Link>

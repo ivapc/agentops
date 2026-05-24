@@ -3,8 +3,9 @@ import { HugeiconsIcon } from '@hugeicons/react'
 import { Link } from '@tanstack/react-router'
 import type { ColumnDef } from '@tanstack/react-table'
 import { DataTableColumnHeader } from '#/components/data-table-column-header'
+import { RelativeTime } from '#/components/relative-time'
 import { Badge } from '#/components/ui/badge'
-import { formatAgo, formatCost, formatDuration, formatTokens, metricTone, truncateId } from '#/lib/format'
+import { formatCost, formatDuration, formatTokens, metricTone, truncateId } from '#/lib/format'
 import type { SpanSummary } from '#/lib/telemetry'
 
 export const spanColumns: ColumnDef<SpanSummary>[] = [
@@ -12,13 +13,7 @@ export const spanColumns: ColumnDef<SpanSummary>[] = [
     accessorKey: 'startedAtMs',
     header: ({ column }) => <DataTableColumnHeader column={column} title="When" />,
     cell: ({ row }) => (
-      <time
-        dateTime={new Date(row.original.startedAtMs).toISOString()}
-        title={new Date(row.original.startedAtMs).toLocaleString()}
-        className="whitespace-nowrap tabular-nums text-muted-foreground"
-      >
-        {formatAgo(row.original.startedAtMs)}
-      </time>
+      <RelativeTime ts={row.original.startedAtMs} className="whitespace-nowrap tabular-nums text-muted-foreground" />
     ),
   },
   {
@@ -26,10 +21,11 @@ export const spanColumns: ColumnDef<SpanSummary>[] = [
     header: ({ column }) => <DataTableColumnHeader column={column} title="Span" />,
     cell: ({ row }) => {
       const s = row.original
+      const display = s.spanName.replace(/\s*\([0-9a-f-]{8,}\)\s*$/i, '')
       return (
         <div className="flex min-w-0 items-center gap-1.5">
           <span className="block max-w-[260px] truncate" title={s.spanName}>
-            {s.spanName}
+            {display}
           </span>
           {s.hasError && (
             <Badge variant="destructive" className="shrink-0 px-1.5">

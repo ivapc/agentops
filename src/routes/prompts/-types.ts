@@ -17,44 +17,86 @@ export type ModelParams = {
   topP?: number
 }
 
+export type FolderKind = 'user' | 'system'
+
+export type PromptFolder = {
+  id: number
+  name: string
+  parentId: number | null
+  kind: FolderKind
+  createdAt: number
+  updatedAt: number
+}
+
 export type PromptVersion = {
-  id: string
+  id: number
+  promptId: number
   version: number
   messages: Message[]
   modelParams: ModelParams
   tools: Tool[]
   responseFormat: ResponseFormat
-  createdAt: number
   author: string
+  sourceRef: string | null
+  createdAt: number
+}
+
+export type RunConfig = {
+  endpointUrl?: string
+  agentName?: string
 }
 
 export type Prompt = {
-  id: string
+  id: number
+  folderId: number | null
   name: string
-  description: string
-  versions: PromptVersion[]
+  description: string | null
+  runConfig: RunConfig | null
+  tagIds: number[]
   createdAt: number
   updatedAt: number
 }
 
-export type CreatePromptInput = {
+export type Tag = {
+  id: number
   name: string
-  description: string
-  initialMessages?: Message[]
-  initialModel?: string
-}
-
-export type SaveVersionInput = Omit<PromptVersion, 'id' | 'version' | 'createdAt' | 'author'> & {
-  author?: string
-}
-
-export type PromptRun = {
-  id: string
-  promptId: string
-  versionId: string
-  versionNumber: number
-  varValues: Record<string, string>
-  output: string
-  durationMs: number
+  color: string
   createdAt: number
+}
+
+export type PromptWithVersions = {
+  prompt: Prompt
+  versions: PromptVersion[]
+  folder: PromptFolder | null
+}
+
+export type CreatePromptInput = {
+  folderId: number | null
+  name: string
+  description?: string | null
+  initialMessages?: Message[]
+  initialModelParams?: ModelParams
+  author: string
+}
+
+export type CreateVersionInput = {
+  promptId: number
+  messages: Message[]
+  modelParams: ModelParams
+  tools: Tool[]
+  responseFormat: ResponseFormat
+  author: string
+}
+
+export type UpdatePromptMetaInput = {
+  promptId: number
+  name?: string
+  description?: string | null
+  folderId?: number | null
+}
+
+export type CreateFolderInput = {
+  name: string
+  parentId?: number | null
+  kind?: FolderKind
 }

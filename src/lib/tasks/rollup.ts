@@ -1,9 +1,9 @@
 import type { TraceCategory, TraceSummary } from '#/lib/telemetry'
 import { type IdentitySource, taskIdentity } from './identity'
 
-export const FIRE_CATEGORIES: ReadonlySet<TraceCategory> = new Set(['scheduled', 'event', 'webhook', 'background'])
+const FIRE_CATEGORIES: ReadonlySet<TraceCategory> = new Set(['scheduled', 'event', 'webhook'])
 
-export type TaskKind = 'cron' | 'one_shot' | 'event' | 'webhook' | 'background' | 'unknown'
+export type TaskKind = 'cron' | 'one_shot' | 'event' | 'webhook' | 'unknown'
 
 export interface TaskRow {
   key: string
@@ -27,12 +27,12 @@ export interface TaskRow {
   sampleTraceId: string
 }
 
-export interface SparkPoint {
+interface SparkPoint {
   t: number
   fires: number
 }
 
-export interface RollupOpts {
+interface RollupOpts {
   /** Number of buckets for the sparkline series. Default 16. */
   buckets?: number
   /** Window start in ms; defaults to min(startedAtMs) across input. */
@@ -115,13 +115,7 @@ export function rollupTasks(traces: TraceSummary[], opts: RollupOpts = {}): Task
 
 function deriveKind(t: TraceSummary): TaskKind {
   const explicit = t.taskKind?.toLowerCase()
-  if (
-    explicit === 'cron' ||
-    explicit === 'one_shot' ||
-    explicit === 'event' ||
-    explicit === 'webhook' ||
-    explicit === 'background'
-  ) {
+  if (explicit === 'cron' || explicit === 'one_shot' || explicit === 'event' || explicit === 'webhook') {
     return explicit
   }
   switch (t.category) {
@@ -131,8 +125,6 @@ function deriveKind(t: TraceSummary): TaskKind {
       return 'event'
     case 'webhook':
       return 'webhook'
-    case 'background':
-      return 'background'
     default:
       return 'unknown'
   }

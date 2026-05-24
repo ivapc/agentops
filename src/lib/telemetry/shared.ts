@@ -3,7 +3,7 @@ import { asMessages } from '#/lib/conversation'
 import { parseJson } from '#/lib/json'
 import { estimateCostUsd } from '#/lib/llm-pricing'
 import { pickCanonical, pickCanonicalNumber } from './conventions'
-import type { SessionSummary, SpansViewKind, ToolErrorRow, ToolPayloadRow } from './types'
+import type { IdentityFilter, SessionSummary, SpansViewKind, ToolErrorRow, ToolPayloadRow } from './types'
 
 // Sessions are reconstructed from raw spans, so the scan has to pull every
 // row that could carry a session-identifying attribute. When the cap is hit
@@ -21,8 +21,6 @@ export function classifySpanRow(spanName: string, purpose: string): { kind: Span
   if (purpose) return { kind: 'utility', label: purpose }
   return { kind: 'sub-agent', label: extractAgentName(spanName) || spanName }
 }
-
-export type IdentityFilter = { userId?: string; userName?: string }
 
 export function pickIdentityValue(
   opts: IdentityFilter | undefined,
@@ -209,12 +207,16 @@ function rollupTrace(rows: Array<Record<string, unknown>>): Omit<TraceSession, '
         }
       }
     }
-    // Only flag errors on actual AI-operation spans (chat, invoke_agent,
-    // execute_tool). Infrastructure spans that merely carry session.trigger_type
-    // should not mark the whole session as errored.
+    // Flag errors on AI-op spans (chat / invoke_agent / execute_tool) and on
+    // session-bearing root spans (e.g. POST /v1/responses/ failing with 5xx).
+    // The latter is the user-facing call — its failure means the session
+    // failed. Pure infrastructure spans (no AI op, no session attr) are
+    // ignored so trigger-receiver noise doesn't pollute.
     if (h.span_status === 'ERROR') {
       const opName = typeof h.operation_name === 'string' ? h.operation_name : ''
-      if (h.gen_ai_operation_name || opName.startsWith('invoke_agent ') || opName.startsWith('execute_tool ')) {
+      const isAiOp = h.gen_ai_operation_name || opName.startsWith('invoke_agent ') || opName.startsWith('execute_tool ')
+      const isSessionRoot = !!pickCanonical(h, 'sessionId')
+      if (isAiOp || isSessionRoot) {
         hasError = true
       }
     }

@@ -21,8 +21,5 @@ choices, immutable log).
   an LLM-driven dev tool can pull run data while a developer is debugging.
 - [MCP](mcp.md) — registry of MCP servers and tools so non-AI teams can ship
   tools without quietly degrading agents.
-- [Notes](notes.md) — free-form, human-authored notes attached to a session,
-  trace, or span. The "I looked at this — here's what I found" layer on top
-  of telemetry.
 - [Sessions](sessions.md) — the conversation itself as a first-class object,
   with OTel sitting underneath as the carrier.

@@ -2,7 +2,7 @@ import { ComputerIcon, Moon01Icon, Sun01Icon } from '@hugeicons/core-free-icons'
 import { HugeiconsIcon } from '@hugeicons/react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useTheme } from 'next-themes'
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { providersQuery, setProviderFn } from '#/components/settings-data'
 import { Button } from '#/components/ui/button'
 import { Input } from '#/components/ui/input'
@@ -76,7 +76,7 @@ const MODES = [
 
 const COLORS: { value: ColorTheme; label: string; dot: string }[] = [
   { value: 'neutral', label: 'Neutral', dot: 'oklch(0.205 0 0)' },
-  { value: 'slack', label: 'Slack', dot: 'oklch(0.37 0.14 323.23)' },
+  { value: 'spotify', label: 'Spotify', dot: 'oklch(0.67 0.17 153.85)' },
   { value: 'vscode', label: 'VS Code', dot: 'oklch(0.71 0.15 239.07)' },
 ]
 
@@ -168,10 +168,6 @@ function AccountPane() {
   const [storedId, setStoredId] = useUserId()
   const [value, setValue] = useState(storedId)
   const [scopeToMe, setScopeToMe] = useScopeToMe()
-
-  useEffect(() => {
-    setValue(storedId)
-  }, [storedId])
 
   const dirty = value.trim() !== storedId
 

@@ -1,54 +1,81 @@
+import { Copy01Icon, LockedIcon } from '@hugeicons/core-free-icons'
+import { HugeiconsIcon } from '@hugeicons/react'
+import type { ReactNode } from 'react'
+import { Badge } from '#/components/ui/badge'
 import { Button } from '#/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip'
-import { formatAgo } from '#/lib/format'
 import { NoteSheetButton } from '#/routes/notes/-components/note-sheet-button'
-import type { Prompt } from '../-types'
+import type { Prompt, PromptVersion } from '../-types'
+import { TagPicker } from './tag-picker'
 
-export function PromptDetailHeader({
-  prompt,
+export function PromptDetailActions({
   hasChanges,
   saving,
-  isLatest,
-  activeVersion,
-  latestVersion,
+  isSystem,
   onSave,
+  onDuplicate,
+  promptId,
+  versionsSlot,
 }: {
-  prompt: Prompt
   hasChanges: boolean
   saving: boolean
-  isLatest: boolean
-  activeVersion: number
-  latestVersion: number
+  isSystem: boolean
   onSave: () => void
+  onDuplicate: () => void
+  promptId: number
+  versionsSlot?: ReactNode
 }) {
-  const latest = prompt.versions[prompt.versions.length - 1]
   return (
-    <div className="flex flex-wrap items-start justify-between gap-3 px-4 lg:px-6">
-      <div className="flex flex-col gap-0.5">
-        <h1 className="text-lg font-semibold">{prompt.name}</h1>
-        <span className="text-xs text-muted-foreground">
-          last updated {formatAgo(prompt.updatedAt)} by {latest?.author ?? '—'}
-        </span>
-      </div>
-      <div className="flex items-center gap-3">
-        {!isLatest && (
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <span className="cursor-help border-b border-dashed border-muted-foreground/40 text-xs text-muted-foreground">
-                Viewing v{activeVersion} · saves on top of v{latestVersion}
-              </span>
-            </TooltipTrigger>
-            <TooltipContent side="bottom" className="max-w-xs">
-              You're viewing v{activeVersion}, but the latest is v{latestVersion}. Saving will create a new version on
-              top of v{latestVersion} — it won't overwrite the version you're looking at.
-            </TooltipContent>
-          </Tooltip>
-        )}
-        <NoteSheetButton targetKind="prompt" targetId={prompt.id} />
-        <Button onClick={onSave} disabled={!hasChanges || saving}>
+    <>
+      <NoteSheetButton targetKind="prompt" targetId={String(promptId)} />
+      {versionsSlot}
+      <Button variant="outline" size="sm" onClick={onDuplicate}>
+        <HugeiconsIcon icon={Copy01Icon} strokeWidth={2} data-icon="inline-start" />
+        Duplicate
+      </Button>
+      {!isSystem && (
+        <Button size="sm" onClick={onSave} disabled={!hasChanges || saving}>
           {saving ? 'Saving…' : 'Save as new version'}
         </Button>
-      </div>
+      )}
+    </>
+  )
+}
+
+export function PromptDetailMeta({
+  prompt,
+  latestVersion,
+  isLatest,
+  activeVersion,
+  isSystem,
+}: {
+  prompt: Prompt
+  latestVersion: PromptVersion | undefined
+  isLatest: boolean
+  activeVersion: number
+  isSystem: boolean
+}) {
+  const showSaveHint = !isSystem && !isLatest && latestVersion
+  return (
+    <div className="flex flex-wrap items-center gap-3">
+      <Badge variant="secondary" className="font-mono">
+        v{activeVersion}
+      </Badge>
+      {isSystem && (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Badge variant="outline" className="gap-1" aria-label="System prompt — locked">
+              <HugeiconsIcon icon={LockedIcon} strokeWidth={2} className="size-3" />
+              System
+            </Badge>
+          </TooltipTrigger>
+          <TooltipContent side="bottom" className="max-w-xs">
+            System prompts are managed in code. Duplicate to a user folder to experiment.
+          </TooltipContent>
+        </Tooltip>
+      )}
+      {showSaveHint && <span className="text-xs text-muted-foreground">saves on top of v{latestVersion.version}</span>}
+      <TagPicker promptId={prompt.id} selectedIds={prompt.tagIds} />
     </div>
   )
 }

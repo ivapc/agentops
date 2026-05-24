@@ -4,20 +4,21 @@ import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from '@tanstack/react-router'
 import { useMemo, useState } from 'react'
 import { toast } from 'sonner'
-import { CodeBlock } from '#/components/ai-elements/code-block-lazy'
+import { CodeBlock } from '#/components/ai-elements/code-block'
 import { ToolInput, ToolOutput } from '#/components/ai-elements/tool'
 import { Badge } from '#/components/ui/badge'
 import { Button } from '#/components/ui/button'
 import { Card, CardContent } from '#/components/ui/card'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '#/components/ui/collapsible'
+import { useUser } from '#/hooks/use-user'
 import { asMessages, type ChatMessage, type MessagePart, type MessageRole } from '#/lib/conversation'
 import { formatCost } from '#/lib/format'
-import { formatJson, type JsonValue } from '#/lib/json'
+import { formatJson, type JsonValue, parseJson } from '#/lib/json'
 import { queryKeys } from '#/lib/query-keys'
 import { buildAgentLabels, resolveToolCalls, type Span, type ToolCallResolution } from '#/lib/spans'
 import { NoteSheetButton } from '#/routes/notes/-components/note-sheet-button'
-import { createPrompt } from '#/routes/prompts/-mock-data'
 import type { Message as PromptMessage } from '#/routes/prompts/-types'
+import { createPrompt } from '#/server/prompts'
 import { displayFor, fmtNum, formatDuration } from './shared'
 
 function isLlmSpan(span: Span): boolean {
@@ -42,23 +43,28 @@ export function DetailPanel({ span, spans }: { span: Span; spans?: Span[] }) {
   const display = displayFor(span, agentLabels)
   const navigate = useNavigate()
   const queryClient = useQueryClient()
+  const user = useUser()
 
   const importMutation = useMutation({
     mutationFn: async () => {
       const messages = extractPromptMessages(span)
       const promptName = `imported-from-${span.id.slice(0, 8)}`
       return createPrompt({
-        name: promptName,
-        description: `Imported from span ${span.id}`,
-        initialMessages: messages.length > 0 ? messages : undefined,
-        initialModel: span.model,
+        data: {
+          folderId: null,
+          name: promptName,
+          description: `Imported from span ${span.id}`,
+          initialMessages: messages.length > 0 ? messages : undefined,
+          initialModelParams: span.model ? { model: span.model } : undefined,
+          author: user.name,
+        },
       })
     },
-    onSuccess: async (prompt) => {
+    onSuccess: async (result) => {
       await queryClient.invalidateQueries({ queryKey: queryKeys.prompts.all() })
       const extractedAny = extractPromptMessages(span).length > 0
       toast.success(extractedAny ? 'Prompt created — opening editor' : 'Imported (no messages found in span)')
-      void navigate({ to: '/prompts/$promptId', params: { promptId: prompt.id } })
+      void navigate({ to: '/prompts/$promptId', params: { promptId: String(result.prompt.id) } })
     },
   })
 
@@ -410,20 +416,25 @@ function Stat({ label, value }: { label: string; value: string }) {
   )
 }
 
+function asScalarText(value: unknown): string | null {
+  if (typeof value === 'string') return value
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value)
+  return null
+}
+
 function JsonBlock({ label, value, raw }: { label: string; value?: unknown; raw?: string }) {
-  const text =
-    raw ??
-    (() => {
-      try {
-        return JSON.stringify(value, null, 2)
-      } catch {
-        return String(value)
-      }
-    })()
+  const resolved = raw != null ? (parseJson(raw) ?? raw) : value
+  const scalar = asScalarText(resolved)
   return (
     <div className="min-w-0 max-w-full">
       <div className="mb-1 text-[11px] uppercase tracking-wide text-muted-foreground">{label}</div>
-      <CodeBlock code={text} language="json" className="max-h-96" />
+      {scalar != null ? (
+        <pre className="not-prose max-h-96 w-full min-w-0 max-w-full overflow-auto whitespace-pre-wrap break-words rounded-md border bg-background p-3 font-mono text-xs leading-relaxed text-foreground">
+          {scalar}
+        </pre>
+      ) : (
+        <CodeBlock code={raw ?? formatJson(value)} language="json" className="max-h-96" />
+      )}
     </div>
   )
 }

@@ -1,8 +1,9 @@
 import { Clock01Icon } from '@hugeicons/core-free-icons'
 import { HugeiconsIcon } from '@hugeicons/react'
+import { RelativeTime } from '#/components/relative-time'
 import { Badge } from '#/components/ui/badge'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '#/components/ui/table'
-import { formatAgo, formatDuration, metricTone, shortId } from '#/lib/format'
+import { formatDuration, metricTone, shortId } from '#/lib/format'
 import type { TraceSummary } from '#/lib/telemetry'
 import { cn } from '#/lib/utils'
 
@@ -16,7 +17,7 @@ export function FiresTable({ data, onRowClick }: FiresTableProps) {
     <div className="flex min-h-0 flex-1 flex-col border-t">
       <div className="min-h-0 flex-1 overflow-hidden overflow-y-auto bg-background">
         <Table>
-          <TableHeader className="sticky top-0 z-10 bg-muted">
+          <TableHeader className="sticky top-0 z-10 bg-muted/40 [&_th]:font-normal [&_th]:text-muted-foreground [&_button]:font-normal [&_button]:text-muted-foreground">
             <TableRow className="[&>:first-child]:pl-4 [&>:last-child]:pr-4 lg:[&>:first-child]:pl-6 lg:[&>:last-child]:pr-6">
               <TableHead>When</TableHead>
               <TableHead>Status</TableHead>
@@ -43,13 +44,10 @@ export function FiresTable({ data, onRowClick }: FiresTableProps) {
                   )}
                 >
                   <TableCell>
-                    <time
-                      dateTime={new Date(fire.startedAtMs).toISOString()}
-                      title={new Date(fire.startedAtMs).toLocaleString()}
+                    <RelativeTime
+                      ts={fire.startedAtMs}
                       className="whitespace-nowrap tabular-nums text-muted-foreground"
-                    >
-                      {formatAgo(fire.startedAtMs)}
-                    </time>
+                    />
                   </TableCell>
                   <TableCell>
                     {fire.hasError ? (

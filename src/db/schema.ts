@@ -1,5 +1,5 @@
 import { sql } from 'drizzle-orm'
-import { index, integer, sqliteTable, text, uniqueIndex } from 'drizzle-orm/sqlite-core'
+import { type AnySQLiteColumn, index, integer, sqliteTable, text, uniqueIndex } from 'drizzle-orm/sqlite-core'
 
 export const inventory = sqliteTable(
   'inventory',
@@ -60,11 +60,94 @@ export const notes = sqliteTable(
     parentSessionId: text('parent_session_id'),
     body: text().notNull(),
     author: text().notNull(),
+    status: text({ enum: ['open', 'resolved'] })
+      .notNull()
+      .default('open'),
+    resolvedAt: integer('resolved_at', { mode: 'timestamp_ms' }),
     createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull(),
     updatedAt: integer('updated_at', { mode: 'timestamp_ms' }).notNull(),
   },
   (table) => [
     uniqueIndex('note_target_unique').on(table.targetKind, table.targetId),
     index('note_updated_idx').on(table.updatedAt),
+    index('note_status_updated_idx').on(table.status, table.updatedAt),
+  ],
+)
+
+export const promptFolders = sqliteTable(
+  'prompt_folder',
+  {
+    id: integer({ mode: 'number' }).primaryKey({ autoIncrement: true }),
+    name: text().notNull(),
+    parentId: integer('parent_id').references((): AnySQLiteColumn => promptFolders.id, { onDelete: 'cascade' }),
+    kind: text({ enum: ['user', 'system'] })
+      .notNull()
+      .default('user'),
+    createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull(),
+    updatedAt: integer('updated_at', { mode: 'timestamp_ms' }).notNull(),
+  },
+  (table) => [index('prompt_folder_parent_idx').on(table.parentId)],
+)
+
+export const prompts = sqliteTable(
+  'prompt',
+  {
+    id: integer({ mode: 'number' }).primaryKey({ autoIncrement: true }),
+    folderId: integer('folder_id').references(() => promptFolders.id, { onDelete: 'set null' }),
+    name: text().notNull(),
+    description: text(),
+    runConfigJson: text('run_config_json', { mode: 'json' }),
+    createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull(),
+    updatedAt: integer('updated_at', { mode: 'timestamp_ms' }).notNull(),
+  },
+  (table) => [index('prompt_folder_idx').on(table.folderId)],
+)
+
+export const promptVersions = sqliteTable(
+  'prompt_version',
+  {
+    id: integer({ mode: 'number' }).primaryKey({ autoIncrement: true }),
+    promptId: integer('prompt_id')
+      .notNull()
+      .references(() => prompts.id, { onDelete: 'cascade' }),
+    version: integer().notNull(),
+    messagesJson: text('messages_json', { mode: 'json' }).notNull().default(sql`'[]'`),
+    modelParamsJson: text('model_params_json', { mode: 'json' }).notNull().default(sql`'{}'`),
+    toolsJson: text('tools_json', { mode: 'json' }).notNull().default(sql`'[]'`),
+    responseFormatJson: text('response_format_json', { mode: 'json' }).notNull().default(sql`'{"type":"text"}'`),
+    author: text().notNull(),
+    sourceRef: text('source_ref'),
+    createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull(),
+  },
+  (table) => [
+    uniqueIndex('prompt_version_prompt_version_idx').on(table.promptId, table.version),
+    index('prompt_version_prompt_idx').on(table.promptId),
+  ],
+)
+
+export const promptTags = sqliteTable(
+  'prompt_tag',
+  {
+    id: integer({ mode: 'number' }).primaryKey({ autoIncrement: true }),
+    name: text().notNull(),
+    color: text().notNull().default('slate'),
+    createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull(),
+  },
+  (table) => [uniqueIndex('prompt_tag_name_idx').on(table.name)],
+)
+
+export const promptTagLinks = sqliteTable(
+  'prompt_tag_link',
+  {
+    promptId: integer('prompt_id')
+      .notNull()
+      .references(() => prompts.id, { onDelete: 'cascade' }),
+    tagId: integer('tag_id')
+      .notNull()
+      .references(() => promptTags.id, { onDelete: 'cascade' }),
+  },
+  (table) => [
+    uniqueIndex('prompt_tag_link_pk').on(table.promptId, table.tagId),
+    index('prompt_tag_link_tag_idx').on(table.tagId),
   ],
 )
