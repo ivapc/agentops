@@ -14,8 +14,7 @@ import {
 import { useAutoRefresh } from '#/hooks/use-auto-refresh'
 import { useTimeRange } from '#/hooks/use-time-range'
 import { useScopedUserId } from '#/hooks/use-user'
-import { taskIdentity } from '#/lib/tasks/identity'
-import { rollupTasks } from '#/lib/tasks/rollup'
+import { rollupTasks, taskIdentity } from '#/lib/tasks/rollup'
 import type { TraceSummary } from '#/lib/telemetry'
 import { windowMs } from '#/lib/time-range'
 import { FiresTable } from './-components/fires-table'
@@ -23,9 +22,13 @@ import { TaskHero } from './-components/task-hero'
 import { tasksTracesQuery } from './-data'
 
 export const Route = createFileRoute('/tasks/$taskKey')({
-  validateSearch: (search: Record<string, unknown>): { trace?: string } => {
-    const raw = typeof search.trace === 'string' ? search.trace.trim() : ''
-    return raw ? { trace: raw } : {}
+  validateSearch: (search: Record<string, unknown>): { trace?: string; session?: string } => {
+    const trace = typeof search.trace === 'string' ? search.trace.trim() : ''
+    const session = typeof search.session === 'string' ? search.session.trim() : ''
+    return {
+      ...(trace ? { trace } : {}),
+      ...(session ? { session } : {}),
+    }
   },
   component: TaskDetail,
 })

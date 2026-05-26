@@ -13,6 +13,7 @@ export interface Classification {
   agentName?: string
   agentId?: string
   agentDescription?: string
+  systemInstructions?: string
   toolName?: string
   toolCallId?: string
   tokens?: number
@@ -100,6 +101,11 @@ export function classifySpan(name: string, attrs: Record<string, unknown>, spanS
     if (description) c.agentDescription = description
   }
 
+  const sysInstructions = parseSystemInstructions(
+    pickString(attrs, ['gen_ai.system_instructions', 'gen_ai_system_instructions']),
+  )
+  if (sysInstructions) c.systemInstructions = sysInstructions
+
   // Run-graph identity (top-level so producers stamping on non-invoke_agent
   // spans also flow through). graph.node.* is accepted as an alias.
   const taskId = pickString(attrs, ['gen_ai.task.id', 'gen_ai_task_id', 'graph.node.id', 'graph_node_id'])
@@ -135,6 +141,12 @@ export function classifySpan(name: string, attrs: Record<string, unknown>, spanS
     c.sessionSource = 'attribute'
   }
 
+  // Read on both chat and invoke_agent — chat copy is often truncated.
+  const toolDefs = parseJson(
+    pickString(attrs, ['gen_ai.tool.definitions', 'gen_ai_tool_definitions', 'llm_request_functions']),
+  )
+  if (toolDefs !== undefined) c.toolDefinitions = toolDefs
+
   if (operation === 'tool' || operation === 'mcp') {
     const toolName = pickToolName(name, attrs)
     if (toolName) c.toolName = toolName
@@ -142,8 +154,13 @@ export function classifySpan(name: string, attrs: Record<string, unknown>, spanS
     if (callId) c.toolCallId = callId
     const args = pickString(attrs, ['gen_ai.tool.call.arguments', 'gen_ai_tool_call_arguments'])
     if (args) c.inputParams = args
-    const result = parseJson(pickString(attrs, ['gen_ai.tool.call.result', 'gen_ai_tool_call_result']))
-    if (result !== undefined) c.toolResult = result
+    // Raw-string fallback when parse fails (truncated payloads). Check
+    // `undefined` not nullish so literal JSON `null` still passes through.
+    const rawResult = pickString(attrs, ['gen_ai.tool.call.result', 'gen_ai_tool_call_result'])
+    if (rawResult !== undefined) {
+      const parsed = parseJson(rawResult)
+      c.toolResult = parsed !== undefined ? parsed : rawResult
+    }
   }
 
   if (operation === 'chat') {
@@ -165,11 +182,6 @@ export function classifySpan(name: string, attrs: Record<string, unknown>, spanS
 
     const cached = pickCanonicalNumber(attrs, 'cacheReadTokens')
     if (cached !== undefined) c.cachedTokens = cached
-
-    const toolDefs = parseJson(
-      pickString(attrs, ['gen_ai.tool.definitions', 'gen_ai_tool_definitions', 'llm_request_functions']),
-    )
-    if (toolDefs !== undefined) c.toolDefinitions = toolDefs
 
     const finish = pickStringArray(attrs, ['gen_ai.response.finish_reasons', 'gen_ai_response_finish_reasons'])
     if (finish && finish.length > 0) c.finishReasons = finish
@@ -198,6 +210,36 @@ export function classifySpan(name: string, attrs: Record<string, unknown>, spanS
   })
 
   return c
+}
+
+// `gen_ai.system_instructions` is `[{type:"text",content:"..."}, ...]`.
+// Regex fallback handles App Insights' 8 KB customDimensions truncation
+// slicing mid-content (JSON parse fails on the partial array).
+function parseSystemInstructions(raw: string | undefined): string | undefined {
+  if (!raw) return undefined
+  const parsed = parseJson(raw)
+  if (Array.isArray(parsed)) {
+    const parts: string[] = []
+    for (const item of parsed) {
+      if (item && typeof item === 'object' && !Array.isArray(item) && item.type === 'text') {
+        const content = item.content
+        if (typeof content === 'string' && content) parts.push(content)
+      }
+    }
+    const joined = parts.join('\n\n').trim()
+    if (joined) return joined
+  }
+  // Truncation fallback: pull every `"content":"..."` string we can match.
+  const salvaged: string[] = []
+  for (const m of raw.matchAll(/"content"\s*:\s*"((?:[^"\\]|\\.)*)/g)) {
+    try {
+      salvaged.push(JSON.parse(`"${m[1]}"`))
+    } catch {
+      salvaged.push(m[1])
+    }
+  }
+  const joined = salvaged.join('\n\n').trim()
+  return joined || undefined
 }
 
 function pickOperation(name: string, attrs: Record<string, unknown>): Operation {

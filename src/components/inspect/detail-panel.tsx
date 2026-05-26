@@ -13,22 +13,16 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '#/component
 import { useUser } from '#/hooks/use-user'
 import { asMessages, type ChatMessage, type MessagePart, type MessageRole } from '#/lib/conversation'
 import { formatCost } from '#/lib/format'
+import { type InspectorView, isLlmLike, type ToolCallResolution } from '#/lib/inspector-view'
 import { formatJson, type JsonValue, parseJson } from '#/lib/json'
 import { queryKeys } from '#/lib/query-keys'
-import { buildAgentLabels, resolveToolCalls, type Span, type ToolCallResolution } from '#/lib/spans'
+import type { Span } from '#/lib/spans'
 import type { LogLevel } from '#/lib/telemetry/types'
 import { NoteSheetButton } from '#/routes/notes/-components/note-sheet-button'
 import type { Message as PromptMessage } from '#/routes/prompts/-types'
 import { fetchSessionLogs } from '#/server/logs'
 import { createPrompt } from '#/server/prompts'
 import { displayFor, fmtNum, formatDuration } from './shared'
-
-function isLlmSpan(span: Span): boolean {
-  if (span.operation === 'chat') return true
-  if (span.llmInput != null || span.llmOutput != null) return true
-  if (span.model) return true
-  return false
-}
 
 function extractPromptMessages(span: Span): PromptMessage[] {
   const out: PromptMessage[] = []
@@ -41,41 +35,26 @@ function extractPromptMessages(span: Span): PromptMessage[] {
 
 export function DetailPanel({
   span,
-  spans,
+  view,
   onSelect,
 }: {
   span: Span
-  spans?: Span[]
+  view?: InspectorView
   onSelect?: (id: string) => void
 }) {
   const duration = span.endMs - span.startMs
-  const agentLabels = useMemo(() => (spans ? buildAgentLabels(spans) : undefined), [spans])
-  const display = displayFor(span, agentLabels)
+  const display = displayFor(span, view?.agentLabels)
+  const systemPrompt = view?.systemPromptByAgent.get(span.id)
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const user = useUser()
-  const nestedErrors = useMemo<Span[]>(() => {
-    if (!spans) return []
-    const out: Span[] = []
-    const queue: string[] = [span.id]
-    const visited = new Set<string>([span.id])
-    while (queue.length > 0 && out.length < 5) {
-      const pid = queue.shift()
-      for (const child of spans) {
-        if (child.parentId !== pid || visited.has(child.id)) continue
-        visited.add(child.id)
-        if (child.errorType || child.errorMessage) out.push(child)
-        queue.push(child.id)
-      }
-    }
-    return out
-  }, [spans, span.id])
+  const nestedErrors = useMemo<Span[]>(() => view?.descendantErrors(span.id) ?? [], [view, span.id])
 
   const importMutation = useMutation({
     mutationFn: async () => {
       const messages = extractPromptMessages(span)
       const promptName = `imported-from-${span.id.slice(0, 8)}`
-      return createPrompt({
+      const result = await createPrompt({
         data: {
           folderId: null,
           name: promptName,
@@ -85,10 +64,10 @@ export function DetailPanel({
           author: user.name,
         },
       })
+      return { result, extractedAny: messages.length > 0 }
     },
-    onSuccess: async (result) => {
+    onSuccess: async ({ result, extractedAny }) => {
       await queryClient.invalidateQueries({ queryKey: queryKeys.prompts.all() })
-      const extractedAny = extractPromptMessages(span).length > 0
       toast.success(extractedAny ? 'Prompt created — opening editor' : 'Imported (no messages found in span)')
       void navigate({ to: '/prompts/$promptId', params: { promptId: String(result.prompt.id) } })
     },
@@ -122,7 +101,7 @@ export function DetailPanel({
           parentTraceId={span.traceId}
           parentSessionId={span.sessionId ?? null}
         />
-        {isLlmSpan(span) && (
+        {isLlmLike(span) && (
           <Button
             variant="outline"
             size="sm"
@@ -139,15 +118,7 @@ export function DetailPanel({
         <div className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2">
           {(span.errorMessage || span.errorType) && (
             <>
-              <div className="text-[13px] font-medium leading-snug text-destructive">
-                {span.errorType && (
-                  <span className="font-mono">
-                    {span.errorType}
-                    {span.errorMessage ? ': ' : ''}
-                  </span>
-                )}
-                {span.errorMessage}
-              </div>
+              <ErrorLine type={span.errorType} message={span.errorMessage} size="md" />
               {span.errorStack && (
                 <pre className="mt-1.5 whitespace-pre-wrap break-words font-mono text-[11px] leading-relaxed text-muted-foreground">
                   {span.errorStack}
@@ -164,15 +135,7 @@ export function DetailPanel({
               className="mt-2 block w-full rounded border-l-2 border-destructive/40 bg-destructive/5 px-2 py-1.5 text-left transition-colors enabled:cursor-pointer enabled:hover:bg-destructive/10 disabled:cursor-default"
             >
               <div className="text-[10px] uppercase tracking-wider text-muted-foreground">caused by · {child.name}</div>
-              <div className="mt-0.5 text-[12px] leading-snug text-destructive">
-                {child.errorType && (
-                  <span className="font-mono">
-                    {child.errorType}
-                    {child.errorMessage ? ': ' : ''}
-                  </span>
-                )}
-                {child.errorMessage}
-              </div>
+              <ErrorLine type={child.errorType} message={child.errorMessage} size="sm" />
             </button>
           ))}
         </div>
@@ -201,21 +164,23 @@ export function DetailPanel({
         {span.systemFingerprint && <Stat label="Fingerprint" value={span.systemFingerprint} />}
       </dl>
 
-      {span.agentDescription && <AgentDescriptionCard content={span.agentDescription} />}
+      {span.agentDescription && <RoleCard kind="agent" label="description" content={span.agentDescription} />}
+      {systemPrompt && <RoleCard kind="system" label="system prompt" content={systemPrompt} />}
 
       {span.inputParams && <JsonBlock label="Input" raw={span.inputParams} />}
       {span.toolResult != null && <JsonBlock label="Result" value={span.toolResult} />}
       {(span.llmInput != null || span.llmOutput != null) && (
-        <MessagesBlock input={span.llmInput} output={span.llmOutput} outputType={span.outputType} spans={spans} />
+        <MessagesBlock input={span.llmInput} output={span.llmOutput} outputType={span.outputType} view={view} />
       )}
-      <SpanLogsBlock span={span} spans={spans} />
+      <SpanLogsBlock span={span} view={view} />
     </div>
   )
 }
 
-function SpanLogsBlock({ span, spans }: { span: Span; spans?: Span[] }) {
+function SpanLogsBlock({ span, view }: { span: Span; view?: InspectorView }) {
   // Shares the React Query cache key with SessionLogsPanel so both panels
   // dedupe the same fetch.
+  const spans = view?.spans
   const traceIds = useMemo(() => {
     const all = spans ?? [span]
     return [...new Set(all.map((s) => s.traceId).filter(Boolean))].sort()
@@ -246,7 +211,7 @@ function SpanLogsBlock({ span, spans }: { span: Span; spans?: Span[] }) {
   if (spanLogs.length === 0) return null
   return (
     <section className="min-w-0">
-      <SectionLabel>Logs</SectionLabel>
+      <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Logs</div>
       <div className="mt-1.5 divide-y divide-border rounded-md border border-border">
         {spanLogs.map((log) => (
           <div key={log.id} className="flex items-start gap-2 px-2.5 py-1.5 text-[11px]">
@@ -276,18 +241,18 @@ function MessagesBlock({
   input,
   output,
   outputType,
-  spans,
+  view,
 }: {
   input?: JsonValue
   output?: JsonValue
   outputType?: string
-  spans?: Span[]
+  view?: InspectorView
 }) {
   const inputMsgs = useMemo(() => asMessages(input), [input])
   const outputMsgs = useMemo(() => asMessages(output), [output])
   // Tool results live on the sibling execute_tool span — asMessages drops
   // tool-role messages — so we splice them back in keyed by tool_call id.
-  const callResolutions = useMemo(() => (spans ? resolveToolCalls(spans) : new Map()), [spans])
+  const callResolutions = view?.callResolutions ?? new Map<string, ToolCallResolution>()
   const structured = outputType && outputType !== 'text' ? outputType : undefined
 
   // If parser produced nothing usable, fall back to raw JSON so we don't hide data.
@@ -303,7 +268,7 @@ function MessagesBlock({
     <section className="flex min-w-0 flex-col gap-3">
       {inputMsgs.length > 0 && (
         <div className="flex min-w-0 flex-col gap-2">
-          <SectionLabel>Input</SectionLabel>
+          <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Input</div>
           {inputMsgs.map((msg, i) => (
             // biome-ignore lint/suspicious/noArrayIndexKey: message positions are stable for a frozen span
             <MessageCard key={`in-${i}`} msg={msg} callResolutions={callResolutions} />
@@ -312,7 +277,7 @@ function MessagesBlock({
       )}
       {outputMsgs.length > 0 && (
         <div className="flex min-w-0 flex-col gap-2">
-          <SectionLabel>Output</SectionLabel>
+          <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Output</div>
           {outputMsgs.map((msg, i) => (
             <MessageCard
               // biome-ignore lint/suspicious/noArrayIndexKey: message positions are stable for a frozen span
@@ -327,10 +292,6 @@ function MessagesBlock({
       )}
     </section>
   )
-}
-
-function SectionLabel({ children }: { children: React.ReactNode }) {
-  return <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">{children}</div>
 }
 
 type RoleKey = MessageRole | 'agent'
@@ -370,7 +331,9 @@ function MessageCard({
     <Card size="sm" className="min-w-0 gap-2">
       <CardContent className="flex min-w-0 flex-col gap-2">
         <div className="flex items-center gap-2">
-          <RoleChip kind={msg.role} />
+          <Badge variant={msg.role === 'assistant' ? 'secondary' : 'outline'} className="h-4 px-1.5 text-[10px]">
+            {ROLE_LABELS[msg.role]}
+          </Badge>
           {isStructured && (
             <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
               structured · {structured}
@@ -378,37 +341,33 @@ function MessageCard({
           )}
         </div>
         <div className="min-w-0 space-y-2">
-          {msg.parts.map((part, i) => (
-            <MessagePartView
-              // biome-ignore lint/suspicious/noArrayIndexKey: part positions are stable for a frozen message
-              key={i}
-              part={part}
-              structured={isStructured}
-              role={msg.role}
-              callResolutions={callResolutions}
-            />
-          ))}
+          {msg.parts.map((part, i) => {
+            const partKey = 'id' in part ? part.id : `msg-part-${i}`
+            return (
+              <MessagePartView
+                key={partKey}
+                part={part}
+                structured={isStructured}
+                role={msg.role}
+                callResolutions={callResolutions}
+              />
+            )
+          })}
         </div>
       </CardContent>
     </Card>
   )
 }
 
-function RoleChip({ kind }: { kind: RoleKey }) {
-  return (
-    <Badge variant={kind === 'assistant' ? 'secondary' : 'outline'} className="h-4 px-1.5 text-[10px]">
-      {ROLE_LABELS[kind]}
-    </Badge>
-  )
-}
-
-function AgentDescriptionCard({ content }: { content: string }) {
+function RoleCard({ kind, label, content }: { kind: RoleKey; label: string; content: string }) {
   return (
     <Card size="sm" className="min-w-0 gap-2">
       <CardContent className="flex min-w-0 flex-col gap-2">
         <div className="flex items-center gap-2">
-          <RoleChip kind="agent" />
-          <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">description</span>
+          <Badge variant={kind === 'assistant' ? 'secondary' : 'outline'} className="h-4 px-1.5 text-[10px]">
+            {ROLE_LABELS[kind]}
+          </Badge>
+          <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">{label}</span>
         </div>
         <CollapsibleText content={content} />
       </CardContent>
@@ -516,12 +475,12 @@ function StructuredText({ content }: { content: string }) {
   return <pre className="whitespace-pre-wrap break-words text-xs leading-snug text-foreground">{content}</pre>
 }
 
-function CollapsibleText({ content, previewChars = 240 }: { content: string; previewChars?: number }) {
+function CollapsibleText({ content }: { content: string }) {
   const [open, setOpen] = useState(false)
-  if (content.length <= previewChars) {
+  if (content.length <= 240) {
     return <pre className="whitespace-pre-wrap break-words text-xs leading-relaxed text-foreground">{content}</pre>
   }
-  const preview = `${content.slice(0, previewChars).trimEnd()}…`
+  const preview = `${content.slice(0, 240).trimEnd()}…`
   return (
     <Collapsible open={open} onOpenChange={setOpen} className="min-w-0">
       <pre className="whitespace-pre-wrap break-words text-xs leading-relaxed text-foreground">
@@ -536,6 +495,21 @@ function CollapsibleText({ content, previewChars = 240 }: { content: string; pre
   )
 }
 
+function ErrorLine({ type, message, size }: { type?: string; message?: string; size: 'md' | 'sm' }) {
+  const cls = size === 'md' ? 'text-[13px] font-medium leading-snug' : 'mt-0.5 text-[12px] leading-snug'
+  return (
+    <div className={`${cls} text-destructive`}>
+      {type && (
+        <span className="font-mono">
+          {type}
+          {message ? ': ' : ''}
+        </span>
+      )}
+      {message}
+    </div>
+  )
+}
+
 function Stat({ label, value }: { label: string; value: string }) {
   return (
     <>
@@ -545,15 +519,14 @@ function Stat({ label, value }: { label: string; value: string }) {
   )
 }
 
-function asScalarText(value: unknown): string | null {
-  if (typeof value === 'string') return value
-  if (typeof value === 'number' || typeof value === 'boolean') return String(value)
-  return null
-}
-
 function JsonBlock({ label, value, raw }: { label: string; value?: unknown; raw?: string }) {
   const resolved = raw != null ? (parseJson(raw) ?? raw) : value
-  const scalar = asScalarText(resolved)
+  const scalar =
+    typeof resolved === 'string'
+      ? resolved
+      : typeof resolved === 'number' || typeof resolved === 'boolean'
+        ? String(resolved)
+        : null
   return (
     <div className="min-w-0 max-w-full">
       <div className="mb-1 text-[11px] uppercase tracking-wide text-muted-foreground">{label}</div>
