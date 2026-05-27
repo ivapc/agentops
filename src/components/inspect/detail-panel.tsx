@@ -10,6 +10,8 @@ import { Badge } from '#/components/ui/badge'
 import { Button } from '#/components/ui/button'
 import { Card, CardContent } from '#/components/ui/card'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '#/components/ui/collapsible'
+import { useSpanEnrichment } from '#/extensions/hooks/use-span-enrichment'
+import type { SpanEnrichment } from '#/extensions/types'
 import { useUser } from '#/hooks/use-user'
 import { asMessages, type ChatMessage, type MessagePart, type MessageRole } from '#/lib/conversation'
 import { formatCost } from '#/lib/format'
@@ -45,6 +47,7 @@ export function DetailPanel({
   const duration = span.endMs - span.startMs
   const display = displayFor(span, view?.agentLabels)
   const systemPrompt = view?.systemPromptByAgent.get(span.id)
+  const { data: enrichment } = useSpanEnrichment(span)
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const user = useUser()
@@ -167,13 +170,24 @@ export function DetailPanel({
       {span.agentDescription && <RoleCard kind="agent" label="description" content={span.agentDescription} />}
       {systemPrompt && <RoleCard kind="system" label="system prompt" content={systemPrompt} />}
 
-      {span.inputParams && <JsonBlock label="Input" raw={span.inputParams} />}
-      {span.toolResult != null && <JsonBlock label="Result" value={span.toolResult} />}
+      <ToolPayloadBlocks span={span} enrichment={enrichment} />
       {(span.llmInput != null || span.llmOutput != null) && (
         <MessagesBlock input={span.llmInput} output={span.llmOutput} outputType={span.outputType} view={view} />
       )}
       <SpanLogsBlock span={span} view={view} />
     </div>
+  )
+}
+
+function ToolPayloadBlocks({ span, enrichment }: { span: Span; enrichment?: SpanEnrichment | null }) {
+  const input = enrichment?.toolInput ?? span.inputParams
+  const result = enrichment?.toolResult ?? (span.toolResult != null ? span.toolResult : undefined)
+  if (!input && result == null) return null
+  return (
+    <>
+      {input && <JsonBlock label="Input" raw={input} />}
+      {result != null && <JsonBlock label="Result" value={result} />}
+    </>
   )
 }
 
@@ -521,11 +535,19 @@ function Stat({ label, value }: { label: string; value: string }) {
 
 function JsonBlock({ label, value, raw }: { label: string; value?: unknown; raw?: string }) {
   const resolved = raw != null ? (parseJson(raw) ?? raw) : value
+  // If the resolved value is a string that is itself valid JSON (object or array),
+  // unwrap it so it renders as formatted JSON rather than a raw string.
+  const unwrapped = (() => {
+    if (typeof resolved !== 'string') return resolved
+    const parsed = parseJson(resolved)
+    if (parsed !== null && typeof parsed === 'object') return parsed
+    return resolved
+  })()
   const scalar =
-    typeof resolved === 'string'
-      ? resolved
-      : typeof resolved === 'number' || typeof resolved === 'boolean'
-        ? String(resolved)
+    typeof unwrapped === 'string'
+      ? unwrapped
+      : typeof unwrapped === 'number' || typeof unwrapped === 'boolean'
+        ? String(unwrapped)
         : null
   return (
     <div className="min-w-0 max-w-full">
@@ -535,7 +557,7 @@ function JsonBlock({ label, value, raw }: { label: string; value?: unknown; raw?
           {scalar}
         </pre>
       ) : (
-        <CodeBlock code={raw ?? formatJson(value)} language="json" className="max-h-96" />
+        <CodeBlock code={formatJson(unwrapped)} language="json" className="max-h-96" />
       )}
     </div>
   )

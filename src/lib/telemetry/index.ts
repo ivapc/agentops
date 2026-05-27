@@ -214,23 +214,11 @@ export async function listToolErrorRates(opts?: TopOpts): Promise<ToolErrorRow[]
 }
 
 export async function listToolPayloadSizes(opts?: TopOpts): Promise<ToolPayloadRow[]> {
-  // Override: HTTP endpoint for untruncated payload data (e.g. from Cosmos).
-  // Falls through to the default OTEL provider on failure.
-  const apiUrl = process.env.TOOL_PAYLOAD_API_URL
-  if (apiUrl) {
-    try {
-      const params = new URLSearchParams()
-      if (opts?.fromUs) params.set('fromUs', String(opts.fromUs))
-      if (opts?.toUs) params.set('toUs', String(opts.toUs))
-      if (opts?.limit) params.set('limit', String(opts.limit))
-      const res = await fetch(`${apiUrl}?${params}`)
-      if (res.ok) return (await res.json()) as ToolPayloadRow[]
-    } catch {
-      // fallthrough to default provider
-    }
-  }
-  // To use untruncated Cosmos data, run: cd external/cosmos-payloads && npx tsx serve.ts
-  // Then set TOOL_PAYLOAD_API_URL=http://localhost:3100 in .env
+  // Extensions: direct Cosmos query for untruncated payload data (no sidecar server needed).
+  const { cosmosToolPayloads } = await import('#/extensions/server/sources/cosmos-tool-payloads')
+  const cosmosResult = await cosmosToolPayloads(opts).catch(() => null)
+  if (cosmosResult) return cosmosResult
+
   return analytics.fetchToolPayloadSizes(getActiveProvider(), opts)
 }
 

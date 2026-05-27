@@ -24,6 +24,7 @@ import { InputGroup, InputGroupAddon, InputGroupInput } from '#/components/ui/in
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '#/components/ui/resizable'
 import { ScrollArea } from '#/components/ui/scroll-area'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '#/components/ui/table'
+import { useToolDefinitionsEnrichment } from '#/extensions/hooks/use-tool-definitions-enrichment'
 import { useBreakdowns } from '#/hooks/use-breakdowns'
 import { useIsMobile } from '#/hooks/use-mobile'
 import { formatCost } from '#/lib/format'
@@ -137,6 +138,7 @@ function SessionTools({ view, selectedSpan }: { view: InspectorView; selectedSpa
   // Scope rules: invoke_agent → that agent + descendants (all turns).
   // chat → just that chat span (per-turn registry; surfaces dynamic
   // mid-turn tool loading like load_tools(domain)). Otherwise → full session.
+  const { spans: _enrichedSpans, isLoading } = useToolDefinitionsEnrichment(view.spans)
   const groups = useMemo(() => view.toolGroupsFor(selectedSpan), [view, selectedSpan])
 
   let count = 0
@@ -161,7 +163,14 @@ function SessionTools({ view, selectedSpan }: { view: InspectorView; selectedSpa
           {count} tool{count === 1 ? '' : 's'} · {tokens ? `${formatTokens(tokens)} tokens` : '—'}
         </span>
       </header>
-      <ContextTools groups={groups} />
+      {isLoading ? (
+        <div className="flex items-center justify-center gap-2 rounded-md border border-border bg-card p-8">
+          <HugeiconsIcon icon={Loading03Icon} className="size-4 animate-spin text-muted-foreground" />
+          <span className="text-sm text-muted-foreground">Fetching full tool definitions…</span>
+        </div>
+      ) : (
+        <ContextTools groups={groups} />
+      )}
     </div>
   )
 }
