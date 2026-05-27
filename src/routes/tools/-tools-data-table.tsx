@@ -1,12 +1,8 @@
 import { IconChevronLeft, IconChevronRight, IconChevronsLeft, IconChevronsRight } from '@tabler/icons-react'
-import { useQuery } from '@tanstack/react-query'
-import { Link } from '@tanstack/react-router'
 import {
   type ColumnFiltersState,
   flexRender,
   getCoreRowModel,
-  getFacetedRowModel,
-  getFacetedUniqueValues,
   getFilteredRowModel,
   getPaginationRowModel,
   getSortedRowModel,
@@ -16,35 +12,20 @@ import {
 } from '@tanstack/react-table'
 import * as React from 'react'
 import type { AutoRefreshInterval } from '#/components/auto-refresh-select'
-import { DataTableToolbar, type FacetedFilterSpec } from '#/components/data-table-toolbar'
+import { DataTableToolbar } from '#/components/data-table-toolbar'
 import { Spinner } from '#/components/spinner'
 import { Button } from '#/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '#/components/ui/select'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '#/components/ui/table'
-import { useScopeToMe, useUserId } from '#/hooks/use-user'
-import { queryKeys } from '#/lib/query-keys'
-import type { SessionSummary } from '#/lib/telemetry'
+import type { ToolCatalogRow } from '#/lib/telemetry'
 import type { TimeRange } from '#/lib/time-range'
-import { cn } from '#/lib/utils'
-import { getNoteFlagsForKind } from '#/server/notes'
-import { buildSessionColumns } from './columns'
+import { toolColumns } from './-columns'
 
-const FILTERS: FacetedFilterSpec[] = [
-  {
-    columnId: 'status',
-    title: 'Status',
-    options: [
-      { label: 'OK', value: 'ok' },
-      { label: 'Error', value: 'error' },
-    ],
-  },
-]
-
-interface DataTableProps {
-  data: SessionSummary[]
+interface ToolsDataTableProps {
+  data: ToolCatalogRow[]
   isLoading?: boolean
-  onRowClick?: (row: SessionSummary) => void
-  rowClassName?: (row: SessionSummary) => string | undefined
+  sorting: SortingState
+  onSortingChange: (next: SortingState) => void
   range: TimeRange
   onRangeChange: (range: TimeRange) => void
   autoRefresh: AutoRefreshInterval
@@ -53,45 +34,31 @@ interface DataTableProps {
   refreshing?: boolean
 }
 
-export function DataTable({
+export function ToolsDataTable({
   data,
   isLoading,
-  onRowClick,
-  rowClassName,
+  sorting,
+  onSortingChange,
   range,
   onRangeChange,
   autoRefresh,
   onAutoRefreshChange,
   onRefresh,
   refreshing,
-}: DataTableProps) {
-  const [userId] = useUserId()
-  const [scopeToMe] = useScopeToMe()
-  const [columnVisibility, setColumnVisibility] = React.useState<VisibilityState>({ status: false })
+}: ToolsDataTableProps) {
+  const [columnVisibility, setColumnVisibility] = React.useState<VisibilityState>({})
   const [columnFilters, setColumnFilters] = React.useState<ColumnFiltersState>([])
-  const [sorting, setSorting] = React.useState<SortingState>([])
-  const [pagination, setPagination] = React.useState({
-    pageIndex: 0,
-    pageSize: 50,
-  })
-
-  const { data: noteFlags } = useQuery({
-    queryKey: queryKeys.notes.flagsForKind('session'),
-    queryFn: () => getNoteFlagsForKind({ data: 'session' }),
-  })
-  const columns = React.useMemo(() => buildSessionColumns(noteFlags ?? {}), [noteFlags])
+  const [pagination, setPagination] = React.useState({ pageIndex: 0, pageSize: 50 })
 
   const table = useReactTable({
     data,
-    columns,
-    state: {
-      sorting,
-      columnVisibility,
-      columnFilters,
-      pagination,
+    columns: toolColumns,
+    state: { sorting, columnVisibility, columnFilters, pagination },
+    getRowId: (row) => row.name,
+    onSortingChange: (updater) => {
+      const next = typeof updater === 'function' ? updater(sorting) : updater
+      onSortingChange(next)
     },
-    getRowId: (row) => row.sessionId,
-    onSortingChange: setSorting,
     onColumnFiltersChange: setColumnFilters,
     onColumnVisibilityChange: setColumnVisibility,
     onPaginationChange: setPagination,
@@ -99,17 +66,14 @@ export function DataTable({
     getFilteredRowModel: getFilteredRowModel(),
     getPaginationRowModel: getPaginationRowModel(),
     getSortedRowModel: getSortedRowModel(),
-    getFacetedRowModel: getFacetedRowModel(),
-    getFacetedUniqueValues: getFacetedUniqueValues(),
   })
 
   return (
     <div className="flex h-full w-full flex-col">
       <DataTableToolbar
         table={table}
-        searchColumnId="sessionId"
-        searchPlaceholder="Search agents, users, ids…"
-        filters={FILTERS}
+        searchColumnId="name"
+        searchPlaceholder="Filter tools…"
         range={range}
         onRangeChange={onRangeChange}
         autoRefresh={autoRefresh}
@@ -139,12 +103,7 @@ export function DataTable({
                 table.getRowModel().rows.map((row) => (
                   <TableRow
                     key={row.id}
-                    className={cn(
-                      'h-12 [&>:first-child]:pl-4 [&>:last-child]:pr-4 lg:[&>:first-child]:pl-6 lg:[&>:last-child]:pr-6',
-                      onRowClick && 'cursor-pointer',
-                      rowClassName?.(row.original),
-                    )}
-                    onClick={onRowClick ? () => onRowClick(row.original) : undefined}
+                    className="h-12 [&>:first-child]:pl-4 [&>:last-child]:pr-4 lg:[&>:first-child]:pl-6 lg:[&>:last-child]:pr-6"
                   >
                     {row.getVisibleCells().map((cell) => (
                       <TableCell key={cell.id}>{flexRender(cell.column.columnDef.cell, cell.getContext())}</TableCell>
@@ -153,30 +112,12 @@ export function DataTable({
                 ))
               ) : (
                 <TableRow className="hover:bg-transparent">
-                  <TableCell colSpan={columns.length} className="h-48">
-                    <div className="flex h-full items-center justify-center">
+                  <TableCell colSpan={toolColumns.length} className="h-48">
+                    <div className="flex h-full items-center justify-center text-muted-foreground">
                       {isLoading ? (
                         <Spinner size="md" className="text-muted-foreground" />
-                      ) : scopeToMe && userId ? (
-                        <div className="max-w-md space-y-1 text-center text-muted-foreground">
-                          <div>
-                            No sessions for <span className="font-mono text-foreground">{userId}</span>.
-                          </div>
-                          <div className="text-xs">Turn off scope-to-me in Settings → Account to see all sessions.</div>
-                        </div>
                       ) : (
-                        <div className="max-w-md space-y-1 text-center text-pretty text-muted-foreground">
-                          <div>No sessions in this window.</div>
-                          <div className="text-xs">
-                            Set <code className="rounded bg-muted px-1 py-0.5 font-mono">gen_ai.conversation.id</code>{' '}
-                            or <code className="rounded bg-muted px-1 py-0.5 font-mono">ag_ui.thread_id</code> on the
-                            producer to enable session grouping. Individual traces appear on{' '}
-                            <Link to="/traces" className="underline">
-                              /traces
-                            </Link>
-                            .
-                          </div>
-                        </div>
+                        <div>No tools in this window.</div>
                       )}
                     </div>
                   </TableCell>
@@ -195,7 +136,7 @@ export function DataTable({
                 value={`${table.getState().pagination.pageSize}`}
                 onValueChange={(value) => table.setPageSize(Number(value))}
               >
-                <SelectTrigger size="sm" className="w-[68px]" id="rows-per-page">
+                <SelectTrigger size="sm" className="w-[68px]">
                   <SelectValue placeholder={table.getState().pagination.pageSize} />
                 </SelectTrigger>
                 <SelectContent side="top">
