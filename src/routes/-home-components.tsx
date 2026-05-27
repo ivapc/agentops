@@ -6,7 +6,7 @@ import { Badge } from '#/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '#/components/ui/card'
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from '#/components/ui/empty'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '#/components/ui/table'
-import { formatTokens } from '#/lib/format'
+import { formatPercent, formatTokens } from '#/lib/format'
 import type { ToolErrorRow, ToolPayloadRow } from '#/lib/telemetry'
 import type { InventoryRow } from '#/server/inbox'
 
@@ -55,8 +55,15 @@ export function Expandable<T>({ rows, children }: { rows: T[]; children: (visibl
   )
 }
 
-export function OpenLink({ traceId }: { traceId?: string | null }) {
+export function OpenLink({ traceId, sessionId }: { traceId?: string | null; sessionId?: string | null }) {
   const cls = 'inline-flex items-center text-muted-foreground hover:text-foreground'
+  if (sessionId) {
+    return (
+      <Link to="/sessions" search={{ session: sessionId }} className={cls} aria-label="Open session">
+        <ArrowTopRightOnSquareIcon className="size-3.5" />
+      </Link>
+    )
+  }
   if (traceId) {
     return (
       <Link to="." search={(prev) => ({ ...(prev as object), trace: traceId })} className={cls} aria-label="Open trace">
@@ -111,7 +118,7 @@ export function ToolErrorTable({ rows }: { rows: ToolErrorRow[] }) {
                 <TableCell className="text-right tabular-nums">{row.errors}</TableCell>
                 <TableCell className="text-right tabular-nums">{row.total}</TableCell>
                 <TableCell className="text-right">
-                  <Badge variant="destructive">{(row.errorRate * 100).toFixed(1)}%</Badge>
+                  <Badge variant="destructive">{formatPercent(row.errorRate, 1)}</Badge>
                 </TableCell>
                 <TableCell>
                   <OpenLink traceId={row.lastErrorTraceId} />
@@ -139,7 +146,7 @@ export function ToolPayloadTable({ rows }: { rows: ToolPayloadRow[] }) {
               <TableHead className="w-20 text-right tabular-nums">Avg</TableHead>
               <TableHead className="w-20 text-right tabular-nums">p95 ▼</TableHead>
               <TableHead className="w-20 text-right tabular-nums">Max</TableHead>
-              <TableHead className="w-8" />
+              <TableHead className="w-16" />
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -158,7 +165,7 @@ export function ToolPayloadTable({ rows }: { rows: ToolPayloadRow[] }) {
                   <Chars chars={row.maxChars} />
                 </TableCell>
                 <TableCell>
-                  <OpenLink traceId={row.sampleTraceId} />
+                  <OpenLink traceId={row.sampleTraceId} sessionId={row.sampleSessionId} />
                 </TableCell>
               </TableRow>
             ))}

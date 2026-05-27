@@ -11,12 +11,11 @@ import {
   TableCellsIcon,
   WrenchScrewdriverIcon,
 } from '@heroicons/react/24/outline'
-import { Loading03Icon } from '@hugeicons/core-free-icons'
-import { HugeiconsIcon } from '@hugeicons/react'
-import { useEffect, useMemo, useState } from 'react'
-import { CodeBlock } from '#/components/ai-elements/code-block'
+import { useMemo, useState } from 'react'
+import { JsonView } from '#/components/ai-elements/json-view'
 import { formatTokens } from '#/components/context-window'
 import { IconTabs } from '#/components/icon-tabs'
+import { Spinner } from '#/components/spinner'
 import { Badge } from '#/components/ui/badge'
 import { Button } from '#/components/ui/button'
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from '#/components/ui/empty'
@@ -25,9 +24,11 @@ import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '#/componen
 import { ScrollArea } from '#/components/ui/scroll-area'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '#/components/ui/table'
 import { useBreakdowns } from '#/hooks/use-breakdowns'
+import { useCopyToClipboard } from '#/hooks/use-copy-to-clipboard'
 import { useIsMobile } from '#/hooks/use-mobile'
 import { formatCost } from '#/lib/format'
 import { type InspectorView, spanHasError, type Turn, turnTotals } from '#/lib/inspector-view'
+import { formatJson } from '#/lib/json'
 import type { Span } from '#/lib/spans'
 import { cn } from '#/lib/utils'
 import { AgUiPanel } from './agui'
@@ -54,13 +55,17 @@ export function InspectLayout({
   loading,
   selectedId,
   onSelect,
-  fullSpans,
+  rawRoots,
+  onToggleRawRoot,
+  onEnsureRawRoot,
 }: {
   view: InspectorView
   loading?: boolean
   selectedId: string | null
   onSelect: (id: string) => void
-  fullSpans?: boolean
+  rawRoots: Set<string>
+  onToggleRawRoot: (id: string) => void
+  onEnsureRawRoot: (id: string) => void
 }) {
   const [inspectorTab, setInspectorTab] = useState<InspectorTab>('details')
   const isMobile = useIsMobile()
@@ -76,10 +81,17 @@ export function InspectLayout({
           <ScrollArea className="h-full">
             {loading && view.spans.length === 0 ? (
               <div className="flex h-full items-center justify-center py-12 text-xs text-muted-foreground/70">
-                <HugeiconsIcon icon={Loading03Icon} strokeWidth={2} className="size-3.5 animate-spin" />
+                <Spinner />
               </div>
             ) : (
-              <SpanTreeList view={view} selectedId={selectedId} onSelect={onSelect} fullSpans={fullSpans} />
+              <SpanTreeList
+                view={view}
+                selectedId={selectedId}
+                onSelect={onSelect}
+                rawRoots={rawRoots}
+                onToggleRawRoot={onToggleRawRoot}
+                onEnsureRawRoot={onEnsureRawRoot}
+              />
             )}
           </ScrollArea>
         </section>
@@ -89,7 +101,7 @@ export function InspectLayout({
         <section className="flex h-full min-h-0 min-w-0 flex-col">
           {loading && view.spans.length === 0 ? (
             <div className="flex flex-1 items-center justify-center text-xs text-muted-foreground/70">
-              <HugeiconsIcon icon={Loading03Icon} strokeWidth={2} className="size-3.5 animate-spin" />
+              <Spinner />
             </div>
           ) : (
             <>
@@ -173,9 +185,13 @@ function SessionStrip({ view }: { view: InspectorView }) {
     ? (view.agentLabels.get(orchestrator.id) ?? orchestrator.agentName ?? orchestrator.name)
     : 'Session'
 
-  const inputTokens = total.inputTokens || view.totals.input
-  const outputTokens = total.outputTokens || view.totals.output
-  const cachedTokens = total.cachedTokens || view.totals.cached
+  // Grand total = orchestrator + all subagent chats. view.totals already includes both
+  // via turnTotals(). Do NOT use total.inputTokens from useBreakdowns here — that only
+  // covers orchestratorChats and would make the header inconsistent with the context bar
+  // (whose denominator includes subagentChatTokens).
+  const inputTokens = view.totals.input
+  const outputTokens = view.totals.output
+  const cachedTokens = view.totals.cached || total.cachedTokens
   const allTokens = inputTokens + outputTokens
   const cachePct = inputTokens > 0 ? Math.round((cachedTokens / inputTokens) * 100) : 0
 
@@ -312,24 +328,8 @@ function AttrRow({ attrKey, value }: { attrKey: string; value: unknown }) {
   const formatted = formatAttrValue(value)
   const isLong = formatted.length > ATTR_PREVIEW_LIMIT || formatted.includes('\n')
   const [expanded, setExpanded] = useState(false)
-  const [copyState, setCopyState] = useState<'idle' | 'copied' | 'failed'>('idle')
-
-  useEffect(() => {
-    if (copyState === 'idle') return
-    const t = window.setTimeout(() => setCopyState('idle'), 1200)
-    return () => window.clearTimeout(t)
-  }, [copyState])
-
-  const copy = async () => {
-    try {
-      await navigator.clipboard.writeText(formatted)
-      setCopyState('copied')
-    } catch {
-      setCopyState('failed')
-    }
-  }
-  const copied = copyState === 'copied'
-  const failed = copyState === 'failed'
+  const { copied, failed, copy } = useCopyToClipboard()
+  const onCopy = () => copy(formatted)
 
   return (
     <TableRow className="group align-top">
@@ -341,7 +341,7 @@ function AttrRow({ attrKey, value }: { attrKey: string; value: unknown }) {
           <div className="min-w-0 flex-1">
             {isLong ? (
               expanded ? (
-                <CodeBlock code={formatted} language="json" className="max-h-64" />
+                <JsonView value={value} className="max-h-64" />
               ) : (
                 <span className="block truncate text-muted-foreground/90" title={formatted.slice(0, 400)}>
                   {formatted.slice(0, ATTR_PREVIEW_LIMIT)}…
@@ -367,12 +367,12 @@ function AttrRow({ attrKey, value }: { attrKey: string; value: unknown }) {
             size="icon-sm"
             className={cn(
               'shrink-0 transition-opacity focus-visible:opacity-100',
-              copyState === 'idle' ? 'opacity-0 group-hover:opacity-100' : 'opacity-100',
+              copied || failed ? 'opacity-100' : 'opacity-0 group-hover:opacity-100',
               failed && 'text-destructive',
             )}
             aria-label={copied ? 'Copied' : failed ? 'Copy failed' : `Copy ${attrKey}`}
             title={copied ? 'Copied' : failed ? 'Copy failed — clipboard unavailable' : 'Copy value'}
-            onClick={copy}
+            onClick={onCopy}
           >
             {copied ? <CheckIcon /> : failed ? <ExclamationTriangleIcon /> : <ClipboardIcon />}
           </Button>
@@ -384,13 +384,7 @@ function AttrRow({ attrKey, value }: { attrKey: string; value: unknown }) {
 
 function formatAttrValue(v: unknown): string {
   if (v == null) return ''
-  if (typeof v === 'string') return v
-  if (typeof v === 'number' || typeof v === 'boolean') return String(v)
-  try {
-    return JSON.stringify(v, null, 2)
-  } catch {
-    return String(v)
-  }
+  return formatJson(v)
 }
 
 function SessionTurnsPanel({
@@ -548,6 +542,7 @@ function SessionTurnRow({
   const ctxIn = chats[0]?.inputTokens
   const prevCtxIn = prevTurn?.chats[0]?.inputTokens
   const delta = ctxIn != null && prevCtxIn != null ? ctxIn - prevCtxIn : undefined
+  const subTok = subagentChats.reduce((acc, c) => acc + (c.inputTokens ?? 0) + (c.outputTokens ?? 0), 0)
 
   return (
     <TableRow
@@ -582,7 +577,11 @@ function SessionTurnRow({
       </TableCell>
       <TableCell className="py-1.5 text-right tabular-nums">
         <span className="text-foreground">{chats.length}</span>
-        {subagentChats.length > 0 && <span className="ml-1 text-muted-foreground">+{subagentChats.length} sub</span>}
+        {subagentChats.length > 0 && (
+          <span className="ml-1 text-muted-foreground">
+            +{subagentChats.length} sub{subTok > 0 ? ` · ${formatTokens(subTok)}` : ''}
+          </span>
+        )}
       </TableCell>
       <TableCell className="py-1.5 text-right tabular-nums text-foreground">{formatCost(totals.costUsd)}</TableCell>
     </TableRow>

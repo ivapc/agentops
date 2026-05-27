@@ -1,5 +1,3 @@
-import { Loading03Icon } from '@hugeicons/core-free-icons'
-import { HugeiconsIcon } from '@hugeicons/react'
 import { IconMaximize, IconShare2, IconX } from '@tabler/icons-react'
 import { Link } from '@tanstack/react-router'
 import { useEffect, useMemo, useState } from 'react'
@@ -7,14 +5,17 @@ import { toast } from 'sonner'
 import { ContextWindow } from '#/components/context-window'
 import { ConversationView } from '#/components/conversation-view'
 import { CopyButton } from '#/components/copy-button'
+import { Spinner } from '#/components/spinner'
 import { Button } from '#/components/ui/button'
 import { Sheet, SheetClose, SheetContent, SheetDescription, SheetTitle } from '#/components/ui/sheet'
 import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip'
+import { useCopyToClipboard } from '#/hooks/use-copy-to-clipboard'
 import { buildInspectorView } from '#/lib/inspector-view'
 import type { Span } from '#/lib/spans'
 import { categorizeFromSpans } from '#/lib/telemetry/trace-category'
 import { serialize, type TimeRange } from '#/lib/time-range'
 import { InspectLayout } from './overview'
+import { useRawRoots } from './use-raw-roots'
 import { useInspectShortcuts } from './use-shortcuts'
 import { useSpanSearch } from './use-span-search'
 import { type InspectView, InspectViewBar } from './view-bar'
@@ -56,13 +57,12 @@ export function InspectDrawer({
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [drawerView, setDrawerView] = useState<DrawerView>('spans')
   const [contentReady, setContentReady] = useState(false)
-  const [fullSpans, setFullSpans] = useState(false)
 
   const view = useMemo(() => buildInspectorView(open ? spans : []), [open, spans])
+  const raw = useRawRoots(view)
 
   useSpanSearch({
     view,
-    fullSpans,
     onSelect: (id) => {
       setSelectedId(id)
       setDrawerView('spans')
@@ -221,8 +221,8 @@ export function InspectDrawer({
         <InspectViewBar
           view={drawerView}
           onViewChange={setDrawerView}
-          fullSpans={fullSpans}
-          onFullSpansChange={setFullSpans}
+          rawAllOn={raw.rawAllOn}
+          onToggleRawAll={raw.toggleAll}
           hiddenTabs={hiddenTabs}
           extras={
             contentReady && drawerView === 'conversation' && spans.length > 0 ? <ContextWindow view={view} /> : null
@@ -234,7 +234,7 @@ export function InspectDrawer({
             <section className="min-h-0 flex-1 overflow-hidden">
               {!contentReady || (loading && spans.length === 0) ? (
                 <div className="flex h-full items-center justify-center text-xs text-muted-foreground">
-                  <HugeiconsIcon icon={Loading03Icon} strokeWidth={2} className="size-3.5 animate-spin" />
+                  <Spinner />
                 </div>
               ) : (
                 <ConversationView view={view} onSelect={setSelectedId} />
@@ -248,7 +248,9 @@ export function InspectDrawer({
                 loading={showLoading}
                 selectedId={selectedId}
                 onSelect={setSelectedId}
-                fullSpans={fullSpans}
+                rawRoots={raw.rawRoots}
+                onToggleRawRoot={raw.toggleRoot}
+                onEnsureRawRoot={raw.ensureRoot}
               />
             </div>
           )}
@@ -259,17 +261,15 @@ export function InspectDrawer({
 }
 
 function ShareLinkButton({ url }: { url: string }) {
-  const copy = async () => {
-    try {
-      await navigator.clipboard.writeText(url)
-      toast.success('Link copied')
-    } catch {
-      toast.error('Could not copy')
-    }
+  const { copy } = useCopyToClipboard()
+  const onClick = async () => {
+    const ok = await copy(url)
+    if (ok) toast.success('Link copied')
+    else toast.error('Could not copy')
   }
 
   return (
-    <Button type="button" variant="outline" size="sm" onClick={copy}>
+    <Button type="button" variant="outline" size="sm" onClick={onClick}>
       <IconShare2 />
       Share Link
     </Button>
