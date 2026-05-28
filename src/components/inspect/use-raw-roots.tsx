@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { InspectorView } from '#/lib/inspector-view'
 
 export interface RawRootsControl {
@@ -25,15 +25,9 @@ export function ensureRootIn(prev: Set<string>, id: string): Set<string> {
   return next
 }
 
-export function toggleAllIn(prev: Set<string>, topLevelIds: readonly string[]): Set<string> {
-  return prev.size > 0 ? new Set() : new Set(topLevelIds)
-}
-
-// Centralized state for per-trace raw-spans. A root is "on" when its id is in
-// the set. The toolbar's bulk control flips between empty (all off) and the
-// full set of top-level span ids (all on); per-row controls flip one at a time.
 export function useRawRoots(view: InspectorView): RawRootsControl {
   const [rawRoots, setRawRoots] = useState<Set<string>>(() => new Set())
+  const [rawAllOn, setRawAllOn] = useState(false)
 
   const topLevelIds = useMemo(() => view.spans.filter((s) => !s.parentId).map((s) => s.id), [view.spans])
 
@@ -46,14 +40,32 @@ export function useRawRoots(view: InspectorView): RawRootsControl {
   }, [])
 
   const toggleAll = useCallback(() => {
-    setRawRoots((prev) => toggleAllIn(prev, topLevelIds))
+    setRawAllOn((prev) => {
+      const next = !prev
+      setRawRoots(next ? new Set(topLevelIds) : new Set())
+      return next
+    })
   }, [topLevelIds])
+
+  useEffect(() => {
+    if (!rawAllOn) return
+    setRawRoots((prev) => {
+      let next: Set<string> | null = null
+      for (const id of topLevelIds) {
+        if (!prev.has(id)) {
+          if (!next) next = new Set(prev)
+          next.add(id)
+        }
+      }
+      return next ?? prev
+    })
+  }, [rawAllOn, topLevelIds])
 
   return {
     rawRoots,
     toggleRoot,
     ensureRoot,
-    rawAllOn: rawRoots.size > 0,
+    rawAllOn,
     toggleAll,
   }
 }

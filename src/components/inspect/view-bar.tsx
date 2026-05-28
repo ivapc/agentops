@@ -1,7 +1,11 @@
 import { ChatBubbleLeftRightIcon, QueueListIcon } from '@heroicons/react/24/outline'
 import { IconBraces } from '@tabler/icons-react'
 import type { ReactNode } from 'react'
-import { type AutoRefreshInterval, AutoRefreshSelect } from '#/components/auto-refresh-select'
+import {
+  type AutoRefreshInterval,
+  AutoRefreshSelect,
+  INSPECT_AUTO_REFRESH_OPTIONS,
+} from '#/components/auto-refresh-select'
 import { IconTabs } from '#/components/icon-tabs'
 import { Separator } from '#/components/ui/separator'
 import { Toggle } from '#/components/ui/toggle'
@@ -55,11 +59,18 @@ export function InspectViewBar({
         {showRawAll && (
           <Tooltip>
             <TooltipTrigger asChild>
-              <Toggle size="sm" pressed={rawAllOn} onPressedChange={onToggleRawAll} aria-label="Show raw spans">
+              <Toggle
+                size="sm"
+                pressed={rawAllOn}
+                onPressedChange={onToggleRawAll}
+                aria-label="Toggle raw spans on every trace"
+              >
                 <IconBraces />
               </Toggle>
             </TooltipTrigger>
-            <TooltipContent>{rawAllOn ? 'Hide raw spans (all traces)' : 'Show raw spans (all traces)'}</TooltipContent>
+            <TooltipContent>
+              {rawAllOn ? 'Close raw spans on every trace' : 'Open raw spans on every trace'}
+            </TooltipContent>
           </Tooltip>
         )}
         {showRawAll && (hasRefreshGroup || extras != null) && <Separator orientation="vertical" className="mx-1 h-5" />}
@@ -69,6 +80,7 @@ export function InspectViewBar({
             onChange={onAutoRefreshChange}
             onRefresh={onRefresh}
             loading={refreshing}
+            options={INSPECT_AUTO_REFRESH_OPTIONS}
           />
         )}
         {extras}
