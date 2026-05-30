@@ -1,4 +1,6 @@
 import {
+  CubeIcon,
+  Database01Icon,
   Edit02Icon,
   Home01Icon,
   InboxIcon,
@@ -10,9 +12,19 @@ import {
   TestTubeIcon,
 } from '@hugeicons/core-free-icons'
 
-type NavTo = '/' | '/sessions' | '/traces' | '/tasks' | '/mcp' | '/notes' | '/prompts' | '/evals' | '/inbox'
+type NavTo =
+  | '/'
+  | '/sessions'
+  | '/traces'
+  | '/tasks'
+  | '/mcp'
+  | '/notes'
+  | '/inventory/system-prompts'
+  | '/datasets'
+  | '/evals'
+  | '/inbox'
 
-type NavGroup = 'observe' | 'workbench' | 'inbox'
+type NavGroup = 'observe' | 'workbench' | 'inventory' | 'inbox'
 
 export interface NavItem {
   to: NavTo
@@ -29,10 +41,18 @@ export const NAV_ITEMS: NavItem[] = [
   { to: '/tasks', label: 'Tasks', icon: Task01Icon, group: 'observe' },
   { to: '/mcp', label: 'MCP', icon: PuzzleIcon, group: 'observe', soon: true },
   { to: '/notes', label: 'Notes', icon: StickyNote01Icon, group: 'workbench' },
-  { to: '/prompts', label: 'Prompts', icon: Edit02Icon, group: 'workbench' },
+  { to: '/datasets', label: 'Datasets', icon: Database01Icon, group: 'workbench' },
   { to: '/evals', label: 'Evals', icon: TestTubeIcon, group: 'workbench', soon: true },
+  { to: '/inventory/system-prompts', label: 'System Prompts', icon: Edit02Icon, group: 'inventory' },
   { to: '/inbox', label: 'Inbox', icon: InboxIcon, group: 'inbox' },
 ]
+
+// Expandable parent for the Inventory section. Children come from NAV_ITEMS where group === 'inventory'.
+export const INVENTORY_GROUP = {
+  label: 'Inventory',
+  icon: CubeIcon,
+  basePath: '/inventory',
+} as const
 
 export function navMatches(item: NavItem, path: string): boolean {
   return item.to === '/' ? path === '/' : path.startsWith(item.to)

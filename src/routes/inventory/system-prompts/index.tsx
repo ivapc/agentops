@@ -1,4 +1,4 @@
-import { Add01Icon, LockedIcon, Refresh01Icon, StickyNote01Icon } from '@hugeicons/core-free-icons'
+import { LockedIcon, Refresh01Icon } from '@hugeicons/core-free-icons'
 import { HugeiconsIcon } from '@hugeicons/react'
 import { IconSearch } from '@tabler/icons-react'
 import { queryOptions, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
@@ -20,26 +20,15 @@ import { toast } from 'sonner'
 import { DataTableFacetedFilter } from '#/components/data-table-faceted-filter'
 import { Page } from '#/components/page'
 import { Button } from '#/components/ui/button'
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '#/components/ui/dialog'
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '#/components/ui/empty'
 import { Input } from '#/components/ui/input'
-import { Label } from '#/components/ui/label'
-import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from '#/components/ui/select'
 import { Skeleton } from '#/components/ui/skeleton'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '#/components/ui/table'
 import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip'
 import { queryKeys } from '#/lib/query-keys'
 import { cn } from '#/lib/utils'
 import { getSyncConfig, syncSystemPrompts } from '#/server/prompt-sync'
-import { createFolder, listFolders, listPrompts, listTags } from '#/server/prompts'
-import { NewPromptDialog } from './-components/new-prompt-dialog'
+import { listFolders, listPrompts, listTags } from '#/server/prompts'
 import { buildPromptColumns } from './-components/prompts-columns'
 import type { PromptFolder } from './-types'
 
@@ -64,7 +53,7 @@ const syncConfigQuery = queryOptions({
   staleTime: 30_000,
 })
 
-export const Route = createFileRoute('/prompts/')({
+export const Route = createFileRoute('/inventory/system-prompts/')({
   loader: ({ context }) =>
     Promise.all([
       context.queryClient.ensureQueryData(foldersQuery),
@@ -72,30 +61,27 @@ export const Route = createFileRoute('/prompts/')({
       context.queryClient.ensureQueryData(tagsQuery),
       context.queryClient.ensureQueryData(syncConfigQuery),
     ]),
-  component: PromptsListPage,
+  component: SystemPromptsListPage,
 })
-
-const TYPE_OPTIONS = [
-  { label: 'System', value: 'system' },
-  { label: 'User', value: 'user' },
-]
 
 const UNFILED_KEY = '__unfiled__'
 
-function PromptsListPage() {
-  const queryClient = useQueryClient()
+function SystemPromptsListPage() {
   const navigate = useNavigate()
+  const queryClient = useQueryClient()
   const { data: folders = [], isLoading: foldersLoading } = useQuery(foldersQuery)
-  const { data: prompts = [], isLoading: promptsLoading } = useQuery(promptsQuery)
+  const { data: allPrompts = [], isLoading: promptsLoading } = useQuery(promptsQuery)
   const { data: tags = [] } = useQuery(tagsQuery)
   const { data: syncConfig } = useQuery(syncConfigQuery)
 
-  const [newPromptOpen, setNewPromptOpen] = useState(false)
-  const [newFolderOpen, setNewFolderOpen] = useState(false)
-  const [defaultFolderId, setDefaultFolderId] = useState<number | null>(null)
-
   const folderById = useMemo(() => new Map(folders.map((f) => [f.id, f])), [folders])
   const tagsById = useMemo(() => new Map(tags.map((t) => [t.id, t])), [tags])
+
+  // System prompts only — those filed under a system-kind folder.
+  const prompts = useMemo(
+    () => allPrompts.filter((p) => p.folderId != null && folderById.get(p.folderId)?.kind === 'system'),
+    [allPrompts, folderById],
+  )
 
   const columns = useMemo(() => buildPromptColumns({ folderById, tagsById }), [folderById, tagsById])
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([])
@@ -105,7 +91,8 @@ function PromptsListPage() {
   const table = useReactTable({
     data: prompts,
     columns,
-    state: { sorting, columnFilters, pagination, columnVisibility: { kind: false, tagIds: false } },
+    // Every row here is a system prompt, so the Type column is redundant.
+    state: { sorting, columnFilters, pagination, columnVisibility: { kind: false, tagIds: false, type: false } },
     getRowId: (row) => String(row.id),
     onSortingChange: setSorting,
     onColumnFiltersChange: setColumnFilters,
@@ -155,10 +142,6 @@ function PromptsListPage() {
     }
     const groups = [...map.values()]
     groups.sort((a, b) => {
-      if (a.folder?.kind !== b.folder?.kind) {
-        if (a.folder?.kind === 'system') return -1
-        if (b.folder?.kind === 'system') return 1
-      }
       if (!a.folder) return 1
       if (!b.folder) return -1
       return a.folder.name.localeCompare(b.folder.name)
@@ -170,22 +153,19 @@ function PromptsListPage() {
   const columnCount = table.getVisibleLeafColumns().length
 
   return (
-    <Page title="Prompts">
+    <Page title="System Prompts">
       <div className="flex min-w-0 flex-col">
         <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-3 lg:px-6">
           <div className="flex flex-1 flex-wrap items-center gap-2">
             <div className="relative w-full min-w-0 sm:w-64">
               <IconSearch className="pointer-events-none absolute top-1/2 left-2 size-3.5 -translate-y-1/2 text-muted-foreground" />
               <Input
-                placeholder="Search prompts…"
+                placeholder="Search system prompts…"
                 value={searchValue}
                 onChange={(e) => searchColumn?.setFilterValue(e.target.value)}
                 className="h-8 w-full pl-7"
               />
             </div>
-            {table.getColumn('kind') && (
-              <DataTableFacetedFilter column={table.getColumn('kind')} title="Type" options={TYPE_OPTIONS} />
-            )}
             {tagFilterOptions.length > 0 && table.getColumn('tagIds') && (
               <DataTableFacetedFilter column={table.getColumn('tagIds')} title="Tags" options={tagFilterOptions} />
             )}
@@ -202,19 +182,6 @@ function PromptsListPage() {
               pending={syncMutation.isPending}
               onSync={() => syncMutation.mutate()}
             />
-            <Button variant="outline" size="sm" onClick={() => setNewFolderOpen(true)}>
-              New folder
-            </Button>
-            <Button
-              size="sm"
-              onClick={() => {
-                setDefaultFolderId(null)
-                setNewPromptOpen(true)
-              }}
-            >
-              <HugeiconsIcon icon={Add01Icon} strokeWidth={2} data-icon="inline-start" />
-              New prompt
-            </Button>
           </div>
         </div>
 
@@ -229,8 +196,8 @@ function PromptsListPage() {
           <Empty>
             <EmptyHeader>
               <EmptyMedia variant="icon" />
-              <EmptyTitle>No prompts yet</EmptyTitle>
-              <EmptyDescription>Create one to get started, or sync from your agent repo.</EmptyDescription>
+              <EmptyTitle>No system prompts yet</EmptyTitle>
+              <EmptyDescription>Sync from your agent repo to populate this inventory.</EmptyDescription>
             </EmptyHeader>
           </Empty>
         ) : (
@@ -254,7 +221,7 @@ function PromptsListPage() {
                 {groupedRows.length === 0 ? (
                   <TableRow>
                     <TableCell colSpan={columnCount} className="h-32 text-center text-muted-foreground">
-                      No prompts match the current filters.
+                      No system prompts match the current filters.
                     </TableCell>
                   </TableRow>
                 ) : (
@@ -268,11 +235,7 @@ function PromptsListPage() {
                           )}
                         >
                           <span className="inline-flex items-center gap-2">
-                            {group.folder?.kind === 'system' ? (
-                              <HugeiconsIcon icon={LockedIcon} strokeWidth={2} className="size-3.5" />
-                            ) : group.folder ? null : (
-                              <HugeiconsIcon icon={StickyNote01Icon} strokeWidth={2} className="size-3.5" />
-                            )}
+                            <HugeiconsIcon icon={LockedIcon} strokeWidth={2} className="size-3.5" />
                             <span>{group.folder?.name ?? 'Unfiled'}</span>
                             <span className="font-mono normal-case text-muted-foreground">{group.rows.length}</span>
                           </span>
@@ -283,7 +246,10 @@ function PromptsListPage() {
                           key={row.id}
                           className="cursor-pointer [&>:first-child]:pl-4 [&>:last-child]:pr-4 lg:[&>:first-child]:pl-6 lg:[&>:last-child]:pr-6"
                           onClick={() =>
-                            navigate({ to: '/prompts/$promptId', params: { promptId: String(row.original.id) } })
+                            navigate({
+                              to: '/inventory/system-prompts/$promptId',
+                              params: { promptId: String(row.original.id) },
+                            })
                           }
                         >
                           {row.getVisibleCells().map((cell) => (
@@ -301,14 +267,6 @@ function PromptsListPage() {
           </div>
         )}
       </div>
-
-      <NewPromptDialog
-        open={newPromptOpen}
-        onOpenChange={setNewPromptOpen}
-        folders={folders}
-        defaultFolderId={defaultFolderId}
-      />
-      <NewFolderDialog open={newFolderOpen} onOpenChange={setNewFolderOpen} folders={folders} />
     </Page>
   )
 }
@@ -350,103 +308,5 @@ function SyncFromCodeButton({
         <span className="font-mono text-foreground">.env.local</span> to enable sync.
       </TooltipContent>
     </Tooltip>
-  )
-}
-
-const NO_PARENT_VALUE = '__none__'
-
-function NewFolderDialog({
-  open,
-  onOpenChange,
-  folders,
-}: {
-  open: boolean
-  onOpenChange: (open: boolean) => void
-  folders: PromptFolder[]
-}) {
-  const queryClient = useQueryClient()
-  const [name, setName] = useState('')
-  const [parentId, setParentId] = useState<number | null>(null)
-
-  const userFolders = folders.filter((f) => f.kind === 'user')
-
-  const mutation = useMutation({
-    mutationFn: () => createFolder({ data: { name: name.trim(), parentId } }),
-    onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: queryKeys.prompts.folders() })
-      toast.success('Folder created')
-      setName('')
-      setParentId(null)
-      onOpenChange(false)
-    },
-  })
-
-  const canSubmit = name.trim().length > 0 && !mutation.isPending
-
-  return (
-    <Dialog
-      open={open}
-      onOpenChange={(value) => {
-        onOpenChange(value)
-        if (!value) {
-          setName('')
-          setParentId(null)
-        }
-      }}
-    >
-      <DialogContent className="sm:max-w-sm">
-        <DialogHeader>
-          <DialogTitle>New folder</DialogTitle>
-          <DialogDescription>Group prompts. Pick a parent to nest.</DialogDescription>
-        </DialogHeader>
-        <form
-          className="flex flex-col gap-3"
-          onSubmit={(e) => {
-            e.preventDefault()
-            if (canSubmit) mutation.mutate()
-          }}
-        >
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="new-folder-name">Name</Label>
-            <Input
-              id="new-folder-name"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="e.g. experiments"
-              autoFocus
-            />
-          </div>
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="new-folder-parent">Parent</Label>
-            <Select
-              value={parentId == null ? NO_PARENT_VALUE : String(parentId)}
-              onValueChange={(v) => setParentId(v === NO_PARENT_VALUE ? null : Number(v))}
-            >
-              <SelectTrigger id="new-folder-parent">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectGroup>
-                  <SelectItem value={NO_PARENT_VALUE}>Top level</SelectItem>
-                  {userFolders.map((f) => (
-                    <SelectItem key={f.id} value={String(f.id)}>
-                      {f.name}
-                    </SelectItem>
-                  ))}
-                </SelectGroup>
-              </SelectContent>
-            </Select>
-          </div>
-          <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
-              Cancel
-            </Button>
-            <Button type="submit" disabled={!canSubmit}>
-              {mutation.isPending ? 'Creating…' : 'Create'}
-            </Button>
-          </DialogFooter>
-        </form>
-      </DialogContent>
-    </Dialog>
   )
 }
