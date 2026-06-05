@@ -1,7 +1,7 @@
-import { type JsonValue, parseJson } from './json'
+import { type JsonValue, parseJson } from '#/lib/json'
+import { pickCanonical, pickCanonicalNumber } from '#/lib/telemetry/conventions'
+import type { Operation, TruncatableField, TruncatedAttrSet } from '.'
 import { estimateCostUsd } from './llm-pricing'
-import type { Operation, TruncatableField, TruncatedAttrSet } from './spans'
-import { pickCanonical, pickCanonicalNumber } from './telemetry/conventions'
 
 // Backends (e.g. App Insights customDimensions) clamp string values around 8 KB.
 const TRUNCATION_THRESHOLD = 8000

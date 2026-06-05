@@ -2,10 +2,10 @@ import {
   ArrowRight01Icon,
   KeyboardIcon,
   Logout01Icon,
+  Megaphone01Icon,
   Moon01Icon,
   MoreHorizontalCircle01Icon,
   MoreVerticalIcon,
-  News01Icon,
   Settings01Icon,
   Sun01Icon,
 } from '@hugeicons/core-free-icons'
@@ -148,7 +148,7 @@ export function AppSidebar() {
                 <SidebarMenuItem>
                   <SidebarMenuButton asChild isActive={pathname.startsWith('/changelog')}>
                     <Link to="/changelog">
-                      <HugeiconsIcon icon={News01Icon} className="size-4 shrink-0" />
+                      <HugeiconsIcon icon={Megaphone01Icon} className="size-4 shrink-0" />
                       <span>Changelog</span>
                     </Link>
                   </SidebarMenuButton>
@@ -200,7 +200,8 @@ function NavRow({ item, pathname }: { item: NavItem; pathname: string }) {
 }
 
 function InventoryNav({ pathname }: { pathname: string }) {
-  const sectionActive = pathname.startsWith(INVENTORY_GROUP.basePath)
+  const sectionActive =
+    pathname.startsWith(INVENTORY_GROUP.basePath) || INVENTORY_NAV.some((item) => navMatches(item, pathname))
   return (
     <Collapsible asChild defaultOpen={sectionActive} className="group/collapsible">
       <SidebarMenuItem>

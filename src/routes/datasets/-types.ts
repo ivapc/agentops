@@ -1,4 +1,4 @@
-// Ids are stringified integer PKs; timestamps are epoch ms. Scoring (pass/passRate) is deferred.
+// Ids are stringified integer PKs; timestamps are epoch ms.
 
 export type ChatRole = 'system' | 'user' | 'assistant' | 'tool'
 
@@ -32,6 +32,14 @@ export function inputTurns(input: ExampleInput): ChatMessage[] | null {
 
 export type RunItemStatus = 'ok' | 'changed' | 'error' | 'pending'
 
+export interface ItemScore {
+  name: string
+  pass: boolean | null
+  value: number | null
+  label: string | null
+  explanation: string | null
+}
+
 export interface DatasetRunItem {
   runId: string
   exampleId: string
@@ -40,7 +48,8 @@ export interface DatasetRunItem {
   latencyMs: number
   tokens: number
   traceId: string | null
-  pass: boolean | null // mocked score — judging deferred
+  scores: ItemScore[]
+  pass: boolean | null
 }
 
 export interface DatasetRun {
@@ -49,7 +58,7 @@ export interface DatasetRun {
   label: string // auto-label, time-based
   createdAt: number // epoch ms
   version: number // dataset version this run was pinned to
-  passRate: number | null // mocked score summary 0..1
+  passRate: number | null
 }
 
 export interface Dataset {
@@ -77,6 +86,21 @@ export interface DatasetDetail {
 
 // Fallback when neither a per-dataset override nor an env default is set.
 export const GLOBAL_DEFAULT_ENDPOINT = 'http://localhost:8000/v1/responses'
+
+// A client/frontend tool declaration (AG-UI shape), sent so the agent can choose to call it.
+export interface ToolDecl {
+  name: string
+  description?: string
+}
+
+export interface AgentOverrides {
+  model?: string | null
+  temperature?: number | null
+  top_p?: number | null
+  max_tokens?: number | null
+  system_prompt?: string | null
+  tools?: ToolDecl[]
+}
 
 export interface UpsertExampleInput {
   datasetId: string

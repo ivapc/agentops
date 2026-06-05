@@ -1,5 +1,5 @@
-import { type JsonValue, parseJson } from './json'
-import type { Span } from './spans'
+import { type JsonValue, parseJson } from '#/lib/json'
+import type { Span } from '.'
 
 // Discriminated union for the conversation view. Each renderer pattern-
 // matches on `kind`; adding a new event type is one new arm. We deliberately
@@ -170,6 +170,19 @@ function emitUtilityChat(span: Span, events: ConversationEvent[]): void {
   })
 }
 
+// llm_input carries this turn's full prior history. The "tail" — everything
+// AFTER the last assistant message — is this turn's new prompt (system+user+
+// tool messages the LLM hadn't seen before this call); the prefix is history
+// each earlier chat span already produced via its own llm_output. Returns the
+// tail's start index. No assistant present (first chat span of a trace, or a
+// sub-agent chat with fresh input) → 0 → the whole input is the turn.
+export function turnTailStart(inputMsgs: ChatMessage[]): number {
+  for (let i = inputMsgs.length - 1; i >= 0; i--) {
+    if (inputMsgs[i].role === 'assistant') return i + 1
+  }
+  return 0
+}
+
 function emitChat(
   span: Span,
   events: ConversationEvent[],
@@ -178,24 +191,8 @@ function emitChat(
   realCallIds: Set<string>,
   parentAgentSpanId: string | undefined,
 ): void {
-  // llm_input carries this turn's full prior history. To avoid re-emitting
-  // messages that earlier chat spans already produced, walk only the "tail":
-  // everything AFTER the last assistant message in llm_input. That tail is
-  // this turn's new prompt (system+user+tool messages the LLM hadn't seen
-  // before this call). The prefix is history — the chat span that originally
-  // produced each piece already emitted it via its own llm_output.
-  //
-  // First chat span of a trace: no assistant in llm_input → tail is the whole
-  // array → system+user emit normally. Sub-agent chats: their llm_input is
-  // fresh → tail is the whole array too. Works in both shapes.
   const inputMsgs = asMessages(span.llmInput)
-  let tailStart = 0
-  for (let i = inputMsgs.length - 1; i >= 0; i--) {
-    if (inputMsgs[i].role === 'assistant') {
-      tailStart = i + 1
-      break
-    }
-  }
+  const tailStart = turnTailStart(inputMsgs)
   const seq = { n: 0 }
   for (let i = tailStart; i < inputMsgs.length; i++) {
     emitFromMessage(
@@ -328,6 +325,14 @@ export type MessagePart =
   | { kind: 'text'; content: string }
   | { kind: 'tool_call'; id: string; name: string; arguments: JsonValue }
   | { kind: 'tool_call_response'; id: string; response: JsonValue }
+
+/** Text parts joined; tool calls and reasoning dropped. */
+export function messageText(parts: MessagePart[]): string {
+  return parts
+    .flatMap((p) => (p.kind === 'text' ? [p.content] : []))
+    .join('\n')
+    .trim()
+}
 
 // Parse OTEL/Logfire message shape. Each message is { role, parts: [...] }
 // where parts can be text, tool_call, or tool_call_response. We tolerate

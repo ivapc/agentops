@@ -23,14 +23,16 @@ doc, write it here.
 - [Datasets](datasets.md) — named, versioned sets of questions fired at the
   agent over HTTP; answers link back to their traces and compare across runs.
   Why Examples and Runs are separate and how trace linkage reuses session ids.
+- [Evaluation](evaluation.md) — one `score` primitive for human / LLM-judge /
+  code verdicts; evaluators run as offline experiments or online monitors, plus
+  dataset-output grading. Why it's one table and how every producer reuses the
+  in-app judge.
 - [MCP read-through registry](mcp-read-through.md) — how loupe reads MCP
   registry references, fetches live server capabilities, and keeps SQLite
   limited to local app state.
 - [Sessions vs Runs](sessions-vs-live.md) — two top-level UI entries, two
   different jobs. Sessions is pure observability; Runs is the
-  active / single-execution surface.
-- [Session sidebar Recent](session-sidebar-recent.md) — how the Sessions page
-  and the sidebar Recent list differ.
+  active / single-execution surface. Includes the sidebar Recent split.
 - [Tasks](tasks.md) — what the Tasks page shows: machine-driven agent runs
   (scheduled, event, webhook, background) rolled up by task identity.
   Read-only over OTel.

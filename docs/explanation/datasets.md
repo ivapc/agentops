@@ -7,7 +7,7 @@ summary: Named, versioned sets of questions fired at the user's agent over HTTP;
 status: draft
 owner: "@ivan"
 audience: loupe-devs
-last-reviewed: 2026-05-30
+last-reviewed: 2026-06-01
 tags: [datasets, evaluation, traces]
 ---
 
@@ -15,9 +15,8 @@ tags: [datasets, evaluation, traces]
 
 A dataset is a saved set of questions you fire at your agent repeatedly to see if
 it still behaves — a regression set, a QA-owned suite, or a test-first scratchpad.
-This doc explains the mental model and why it's shaped the way it is. For the
-build plan and open decisions see [plans/datasets.md](../plans/datasets.md);
-this is UI-only/mock at time of writing.
+This doc explains the mental model and why it's shaped the way it is.
+Output grading is covered in [evaluation.md](evaluation.md).
 
 ## The shape of the problem
 
@@ -65,9 +64,11 @@ harness.
   (global default + per-dataset override) and records what comes back. Agent-behavior
   **overrides** (model / system-prompt / tools / sampling) are sent as extra request
   fields that only opt-in agents honor — UI is mocked, wired later.
-- **Scoring is deferred.** Pass/fail badges, judges, and tool-call assertions are
-  mocked. The `expected` field is typed as a criterion now so the data model is right,
-  but nothing grades it yet.
+- **Tool grading reads a snapshot, not the live trace.** A run snapshots each
+  trace's tool calls into `dataset_run_item.tool_calls_json`, so a `tool_selection`
+  judge (or an `expected` like `{"tool":"multiply"}`) grades real behavior even
+  after the provider expires the trace — captured, like Braintrust, rather than
+  reconstructed at judge time. See [evaluation.md](evaluation.md) for the judge path.
 - **Not a playground.** loupe does not author prompts (Arize's Playground model); the
   agent owns its prompt and tools. We only hand it inputs and optional overrides.
 - **Run-comparison here, trace-diff elsewhere.** Comparing dataset runs lives in this

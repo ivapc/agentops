@@ -109,7 +109,7 @@ function makeColumns(
     },
     {
       id: 'run',
-      header: '',
+      header: 'Run',
       cell: ({ row }) => (
         <Tooltip>
           <TooltipTrigger asChild>
@@ -218,7 +218,7 @@ function DatasetsListPage() {
               <EmptyDescription>
                 {isFiltered
                   ? 'No datasets match the current filters.'
-                  : 'Capture questions from a trace, upload a CSV, or add them by hand to get started.'}
+                  : 'Capture questions from a trace, or add them by hand to get started.'}
               </EmptyDescription>
             </EmptyHeader>
           </Empty>
