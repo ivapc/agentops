@@ -139,3 +139,92 @@ describe('classifySpan — convention-spec contracts', () => {
     expect(c.operationName).toBe('title_generation')
   })
 })
+
+describe('classifySpan — tool I/O', () => {
+  it('reads canonical gen_ai.tool.call.arguments/result (App Insights / MAF)', () => {
+    const c = classifySpan('execute_tool get_weather', {
+      'gen_ai.operation.name': 'execute_tool',
+      'gen_ai.tool.call.arguments': '{"location":"Reykjavik"}',
+      'gen_ai.tool.call.result': 'Reykjavik: rainy, 26°C',
+    })
+    expect(c.inputParams).toBe('{"location":"Reykjavik"}')
+    expect(c.toolResult).toBe('Reykjavik: rainy, 26°C')
+  })
+
+  it('falls back to the chat-message form (tanstack via OpenObserve llm_input/output)', () => {
+    const c = classifySpan('execute_tool get_current_time', {
+      'gen_ai.operation.name': 'execute_tool',
+      // OO renames gen_ai.input/output.messages -> llm_input/llm_output, flattened to JSON strings
+      llm_input: '[{"role":"tool","content":"{\\"timezone\\":\\"UTC\\"}"}]',
+      llm_output: '[{"role":"tool","content":"{\\"iso\\":\\"2026-06-06T20:02:26Z\\"}"}]',
+    })
+    expect(c.inputParams).toBe('{"timezone":"UTC"}')
+    expect(c.toolResult).toEqual({ iso: '2026-06-06T20:02:26Z' })
+  })
+
+  it('prefers canonical keys over the chat-message fallback when both exist (MAF emits both)', () => {
+    const c = classifySpan('execute_tool get_weather', {
+      'gen_ai.operation.name': 'execute_tool',
+      'gen_ai.tool.call.arguments': '{"location":"Reykjavik"}',
+      'gen_ai.tool.call.result': 'Reykjavik: rainy, 26°C',
+      llm_input: '{"location":"SHOULD_NOT_WIN"}',
+      llm_output: 'SHOULD_NOT_WIN',
+    })
+    expect(c.inputParams).toBe('{"location":"Reykjavik"}')
+    expect(c.toolResult).toBe('Reykjavik: rainy, 26°C')
+  })
+})
+
+describe('classifySpan — streaming: TTFT both forms, usage stays unknown', () => {
+  it('reads TTFT from the underscore form (OpenObserve), seconds → ms', () => {
+    const c = classifySpan('chat gpt-5-nano', {
+      'gen_ai.operation.name': 'chat',
+      gen_ai_response_time_to_first_chunk: 0.25,
+    })
+    expect(c.ttftMs).toBe(250)
+  })
+
+  it('reads TTFT from the dotted form (App Insights customDimensions)', () => {
+    const c = classifySpan('chat gpt-5-nano', {
+      'gen_ai.operation.name': 'chat',
+      'gen_ai.response.time_to_first_chunk': 0.25,
+    })
+    expect(c.ttftMs).toBe(250)
+  })
+
+  it('ignores a negative TTFT (no first chunk recorded)', () => {
+    const c = classifySpan('chat gpt-5-nano', {
+      'gen_ai.operation.name': 'chat',
+      'gen_ai.response.time_to_first_chunk': -1,
+    })
+    expect(c.ttftMs).toBeUndefined()
+  })
+
+  it('leaves usage unknown — not 0 — when an interrupted stream omits output tokens', () => {
+    const c = classifySpan('chat gpt-5-nano', {
+      'gen_ai.operation.name': 'chat',
+      'gen_ai.usage.input_tokens': 12,
+    })
+    expect(c.inputTokens).toBe(12)
+    expect(c.outputTokens).toBeUndefined()
+  })
+})
+
+describe('classifySpan — chat scalar completion', () => {
+  it('wraps a scalar completion (llm_output_content) as one assistant message', () => {
+    const c = classifySpan('chat gpt-5-nano', {
+      'gen_ai.operation.name': 'chat',
+      llm_output_content: 'Current time: noon.',
+    })
+    expect(c.llmOutput).toEqual([{ role: 'assistant', content: 'Current time: noon.' }])
+  })
+
+  it('prefers the structured message array over the scalar fallback', () => {
+    const c = classifySpan('chat gpt-5-nano', {
+      'gen_ai.operation.name': 'chat',
+      llm_output: '[{"role":"assistant","content":"structured"}]',
+      llm_output_content: 'SHOULD_NOT_WIN',
+    })
+    expect(c.llmOutput).toEqual([{ role: 'assistant', content: 'structured' }])
+  })
+})

@@ -4,23 +4,18 @@ import { queryOptions, useQuery } from '@tanstack/react-query'
 import { createFileRoute, Link } from '@tanstack/react-router'
 import { useMemo, useState } from 'react'
 import { Page } from '#/components/page'
+import { type Crumb, PageBreadcrumb } from '#/components/page-breadcrumb'
 import { RelativeTime } from '#/components/relative-time'
-import { ScoreValue } from '#/components/scores/score-value'
 import { Badge } from '#/components/ui/badge'
-import {
-  Breadcrumb,
-  BreadcrumbItem,
-  BreadcrumbLink,
-  BreadcrumbList,
-  BreadcrumbPage,
-  BreadcrumbSeparator,
-} from '#/components/ui/breadcrumb'
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '#/components/ui/empty'
 import { Label } from '#/components/ui/label'
 import { Skeleton } from '#/components/ui/skeleton'
 import { Switch } from '#/components/ui/switch'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '#/components/ui/table'
 import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip'
+import { ScoreValue } from '#/features/evaluation/components/score-value'
+import { getEvalDefinition, getEvalRun } from '#/features/evaluation/server/evals'
+import { listScoreConfigs, listScoresByRun } from '#/features/evaluation/server/scores'
 import {
   type ConfigHint,
   EVAL_RUN_STATUS_BADGE,
@@ -34,8 +29,6 @@ import {
 import { formatCost } from '#/lib/format'
 import { queryKeys, STALE_LIVE_MS } from '#/lib/query-keys'
 import { cn } from '#/lib/utils'
-import { getEvalDefinition, getEvalRun } from '#/server/evals'
-import { listScoreConfigs, listScoresByRun } from '#/server/scores'
 
 const runQuery = (id: number) =>
   queryOptions({
@@ -116,33 +109,16 @@ function RunBreadcrumb({
   definitionId?: number
   evaluatorName?: string
 }) {
-  return (
-    <Breadcrumb>
-      <BreadcrumbList>
-        <BreadcrumbItem>
-          <BreadcrumbLink asChild>
-            <Link to="/evals">Evals</Link>
-          </BreadcrumbLink>
-        </BreadcrumbItem>
-        {definitionId != null && (
-          <>
-            <BreadcrumbSeparator />
-            <BreadcrumbItem>
-              <BreadcrumbLink asChild>
-                <Link to="/evals/$evalId" params={{ evalId: String(definitionId) }}>
-                  {evaluatorName ?? `Evaluator #${definitionId}`}
-                </Link>
-              </BreadcrumbLink>
-            </BreadcrumbItem>
-          </>
-        )}
-        <BreadcrumbSeparator />
-        <BreadcrumbItem>
-          <BreadcrumbPage>Run #{id}</BreadcrumbPage>
-        </BreadcrumbItem>
-      </BreadcrumbList>
-    </Breadcrumb>
-  )
+  const crumbs: Crumb[] = [{ label: 'Evals', to: '/evals' }]
+  if (definitionId != null) {
+    crumbs.push({
+      label: evaluatorName ?? `Evaluator #${definitionId}`,
+      to: '/evals/$evalId',
+      params: { evalId: String(definitionId) },
+    })
+  }
+  crumbs.push({ label: `Run #${id}` })
+  return <PageBreadcrumb crumbs={crumbs} />
 }
 
 function StatTile({ label, value, className }: { label: string; value: React.ReactNode; className?: string }) {

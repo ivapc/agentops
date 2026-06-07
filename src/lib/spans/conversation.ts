@@ -1,6 +1,12 @@
 import { type JsonValue, parseJson } from '#/lib/json'
 import type { Span } from '.'
 
+export interface ToolError {
+  kind: string
+  message: string
+  stack?: string
+}
+
 // Discriminated union for the conversation view. Each renderer pattern-
 // matches on `kind`; adding a new event type is one new arm. We deliberately
 // don't extend Span with optional message/tool fields — every renderer ends
@@ -30,15 +36,6 @@ export type ConversationEvent =
       outputTokens?: number
     }
   | {
-      kind: 'utility_chat'
-      timestamp: number
-      spanId: string
-      model?: string
-      inputTokens?: number
-      outputTokens?: number
-      label?: string
-    }
-  | {
       kind: 'tool_call'
       timestamp: number
       toolName: string
@@ -53,7 +50,7 @@ export type ConversationEvent =
       callId: string
       result: JsonValue
       success: boolean
-      error?: { kind: string; message: string }
+      error?: ToolError
       spanId: string
       parentAgentSpanId?: string
     }
@@ -66,10 +63,6 @@ export type ConversationEvent =
       spanId: string
       parentAgentSpanId?: string
     }
-
-// Off until ConversationView shows a placeholder when every event is filtered
-// out — otherwise traces whose chats are all classified as utility render blank.
-const HIDE_UTILITY_CHATS = false
 
 // Build an ordered list of conversation events from spans. Pure — no React,
 // no fetches. Test with span fixtures.
@@ -120,54 +113,56 @@ export function buildConversation(spans: Span[]): ConversationEvent[] {
 
   const events: ConversationEvent[] = []
   const seen = new Set<string>()
-  const sorted = [...spans].sort((a, b) => a.startMs - b.startMs)
 
-  const utilityChatIds = findUtilityChatIds(spans)
+  // Group chat spans into turns (a chat span + any chat spans nested beneath it
+  // — an agent's per-iteration model calls). One-span-per-turn producers (MEAI)
+  // yield turns of one. For multi-iteration turns, each call's input re-sends
+  // the full history, so we read it once from the largest input rather than
+  // concatenating every call.
+  const chatById = new Map<string, Span>()
+  for (const span of spans) if (span.operation === 'chat') chatById.set(span.id, span)
+  const turns = new Map<string, Span[]>()
+  for (const span of chatById.values()) {
+    let root = span
+    while (root.parentId) {
+      const parent = chatById.get(root.parentId)
+      if (!parent) break
+      root = parent
+    }
+    const members = turns.get(root.id)
+    if (members) members.push(span)
+    else turns.set(root.id, [span])
+  }
 
-  for (const span of sorted) {
-    const parentAgentSpanId = parentAgentBySpanId.get(span.id)
-    if (span.operation === 'chat') {
-      if (HIDE_UTILITY_CHATS && utilityChatIds.has(span.id)) {
-        emitUtilityChat(span, events)
-      } else {
-        emitChat(span, events, seen, agentWrappedCallIds, realCallIds, parentAgentSpanId)
-      }
-    } else if (span.operation === 'tool') {
-      emitTool(span, wrappedAgentByToolId.get(span.id), events, parentAgentSpanId)
+  for (const [rootId, members] of turns) {
+    if (members.length === 1) {
+      const span = members[0]
+      emitChat(span, events, seen, agentWrappedCallIds, realCallIds, parentAgentBySpanId.get(span.id))
+      continue
+    }
+    members.sort((a, b) => a.startMs - b.startMs)
+    // First call's input is the clean opening prompt; later iterations re-send
+    // it behind an assistant that turnTailStart would skip.
+    const seq = { n: 0 }
+    const inputSpan = members[0]
+    emitChatInput(inputSpan, events, seen, agentWrappedCallIds, realCallIds, parentAgentBySpanId.get(inputSpan.id), seq)
+    // The wrapping generation mirrors its steps' final output. Read the steps
+    // when any carries output; otherwise the wrapper is the only source.
+    const steps = members.filter((s) => s.id !== rootId)
+    const outputSpans = steps.some((s) => asMessages(s.llmOutput).length > 0) ? steps : members
+    for (const span of outputSpans) {
+      emitChatOutput(span, events, seen, agentWrappedCallIds, realCallIds, parentAgentBySpanId.get(span.id), seq)
+    }
+  }
+
+  for (const span of spans) {
+    if (span.operation === 'tool') {
+      emitTool(span, wrappedAgentByToolId.get(span.id), events, seen, parentAgentBySpanId.get(span.id))
     }
   }
 
   events.sort((a, b) => a.timestamp - b.timestamp)
   return events
-}
-
-// Side-channel LLM calls (title gen, summarization). Explicit signal:
-// `gen_ai.operation.purpose`. Fallback: in an AG-UI trace, conversation chats
-// carry `ag_ui.run_id` and utility chats don't.
-export function findUtilityChatIds(spans: Span[]): Set<string> {
-  const traceHasAgUiRun = spans.some((s) => s.agUiRunId != null)
-  const out = new Set<string>()
-  for (const s of spans) {
-    if (s.operation !== 'chat') continue
-    if (s.operationName) out.add(s.id)
-    else if (traceHasAgUiRun && !s.agUiRunId) out.add(s.id)
-  }
-  return out
-}
-
-function emitUtilityChat(span: Span, events: ConversationEvent[]): void {
-  const firstSystem = asMessages(span.llmInput).find((m) => m.role === 'system')
-  const labelPart = firstSystem?.parts.find((p): p is Extract<MessagePart, { kind: 'text' }> => p.kind === 'text')
-  const label = labelPart?.content.slice(0, 80).replace(/\n.*/s, '')
-  events.push({
-    kind: 'utility_chat',
-    timestamp: span.startMs,
-    spanId: span.id,
-    model: span.model,
-    inputTokens: span.inputTokens,
-    outputTokens: span.outputTokens,
-    label,
-  })
 }
 
 // llm_input carries this turn's full prior history. The "tail" — everything
@@ -183,6 +178,7 @@ export function turnTailStart(inputMsgs: ChatMessage[]): number {
   return 0
 }
 
+// Input and output share one seq counter so React keys stay unique across both.
 function emitChat(
   span: Span,
   events: ConversationEvent[],
@@ -191,9 +187,22 @@ function emitChat(
   realCallIds: Set<string>,
   parentAgentSpanId: string | undefined,
 ): void {
+  const seq = { n: 0 }
+  emitChatInput(span, events, seen, agentWrappedCallIds, realCallIds, parentAgentSpanId, seq)
+  emitChatOutput(span, events, seen, agentWrappedCallIds, realCallIds, parentAgentSpanId, seq)
+}
+
+function emitChatInput(
+  span: Span,
+  events: ConversationEvent[],
+  seen: Set<string>,
+  agentWrappedCallIds: Set<string>,
+  realCallIds: Set<string>,
+  parentAgentSpanId: string | undefined,
+  seq: { n: number },
+): void {
   const inputMsgs = asMessages(span.llmInput)
   const tailStart = turnTailStart(inputMsgs)
-  const seq = { n: 0 }
   for (let i = tailStart; i < inputMsgs.length; i++) {
     emitFromMessage(
       inputMsgs[i],
@@ -207,6 +216,17 @@ function emitChat(
       seq,
     )
   }
+}
+
+function emitChatOutput(
+  span: Span,
+  events: ConversationEvent[],
+  seen: Set<string>,
+  agentWrappedCallIds: Set<string>,
+  realCallIds: Set<string>,
+  parentAgentSpanId: string | undefined,
+  seq: { n: number },
+): void {
   // Tokens belong to the LLM call and attach only to its assistant output —
   // not to the user/system/tool input messages.
   const usage = { inputTokens: span.inputTokens, outputTokens: span.outputTokens }
@@ -240,9 +260,6 @@ function emitFromMessage(
 ): void {
   for (const part of msg.parts) {
     if (part.kind === 'text') {
-      // No content-based dedupe — the caller (emitChat) restricts llm_input
-      // to the tail past the last assistant message, so prior-turn echoes
-      // never reach this code. Genuinely repeated messages emit twice.
       const event: Extract<ConversationEvent, { kind: 'message' }> = {
         kind: 'message',
         timestamp,
@@ -283,6 +300,7 @@ function emitTool(
   span: Span,
   wrappedAgent: Span | undefined,
   events: ConversationEvent[],
+  seen: Set<string>,
   parentAgentSpanId: string | undefined,
 ): void {
   if (!span.toolName || !span.toolCallId) return
@@ -303,15 +321,30 @@ function emitTool(
     return
   }
 
-  // Leaf tool — result only. The matching tool_call was emitted by the chat
-  // span whose llm_output carried this call.
-  const { success, error } = parseToolResultStatus(span.toolResult)
+  // Some instrumentations record only the execution span, never the assistant's
+  // tool_call, leaving the result an orphan. Synthesize the call when missing.
+  const callKey = `call:${span.toolCallId}`
+  if (!seen.has(callKey)) {
+    seen.add(callKey)
+    const call: Extract<ConversationEvent, { kind: 'tool_call' }> = {
+      kind: 'tool_call',
+      timestamp: span.startMs,
+      toolName: span.toolName,
+      arguments: parseInputParams(span.inputParams),
+      callId: span.toolCallId,
+      spanId: span.id,
+    }
+    if (parentAgentSpanId) call.parentAgentSpanId = parentAgentSpanId
+    events.push(call)
+  }
+
+  const error = toolError(span)
   const result: Extract<ConversationEvent, { kind: 'tool_result' }> = {
     kind: 'tool_result',
     timestamp: span.endMs,
     callId: span.toolCallId,
     result: span.toolResult ?? null,
-    success,
+    success: !error,
     spanId: span.id,
   }
   if (error) result.error = error
@@ -402,19 +435,30 @@ function contentToParts(v: JsonValue | undefined): MessagePart[] {
   return out
 }
 
-// Tool failures don't set span_status=ERROR — the failure lives in the
-// result payload. Common shapes: `{ error: true, ... }` or
-// `{ status: 'error', message: ... }`.
-function parseToolResultStatus(v: JsonValue | undefined): {
-  success: boolean
-  error?: { kind: string; message: string }
-} {
-  if (!v || typeof v !== 'object' || Array.isArray(v)) return { success: true }
-  const isError = v.error === true || v.status === 'error'
-  if (!isError) return { success: true }
+// A tool raised (span error status, rich type/message/stack) or returned an
+// error-shaped payload. Span-level wins; undefined on success.
+export function toolError(span: Span): ToolError | undefined {
+  if (span.hasError || span.errorType || span.errorMessage) {
+    const fromSpan: ToolError = {
+      kind: span.errorType ?? 'error',
+      message: span.errorMessage ?? '',
+      ...(span.errorStack ? { stack: span.errorStack } : {}),
+    }
+    // ERROR status but no exception detail — recover it from the payload.
+    if (fromSpan.kind === 'error' && !fromSpan.message) return toolResultError(span.toolResult) ?? fromSpan
+    return fromSpan
+  }
+  return toolResultError(span.toolResult)
+}
+
+// Error-shaped result payload: `{error:true}` / `{status:'error'}` / Anthropic
+// `{is_error:true}` / MCP `{isError:true}`.
+export function toolResultError(v: JsonValue | undefined): ToolError | undefined {
+  if (!v || typeof v !== 'object' || Array.isArray(v)) return undefined
+  if (v.error !== true && v.status !== 'error' && v.is_error !== true && v.isError !== true) return undefined
   const kind = typeof v.error === 'string' ? v.error : typeof v.status === 'string' ? v.status : 'error'
   const message = typeof v.message === 'string' ? v.message : ''
-  return { success: false, error: { kind, message } }
+  return { kind, message }
 }
 
 function parseInputParams(s: string | undefined): JsonValue {

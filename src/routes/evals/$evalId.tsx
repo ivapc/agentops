@@ -14,18 +14,9 @@ import { useMemo, useState } from 'react'
 import { toast } from 'sonner'
 import { Markdown } from '#/components/markdown'
 import { Page } from '#/components/page'
+import { PageBreadcrumb } from '#/components/page-breadcrumb'
 import { RelativeTime } from '#/components/relative-time'
-import { ModelSelect } from '#/components/scores/model-select'
-import { ScoreValue } from '#/components/scores/score-value'
 import { Badge } from '#/components/ui/badge'
-import {
-  Breadcrumb,
-  BreadcrumbItem,
-  BreadcrumbLink,
-  BreadcrumbList,
-  BreadcrumbPage,
-  BreadcrumbSeparator,
-} from '#/components/ui/breadcrumb'
 import { Button } from '#/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '#/components/ui/card'
 import {
@@ -43,6 +34,17 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '#
 import { Skeleton } from '#/components/ui/skeleton'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '#/components/ui/table'
 import { Textarea } from '#/components/ui/textarea'
+import { ModelSelect } from '#/features/evaluation/components/model-select'
+import { ScoreValue } from '#/features/evaluation/components/score-value'
+import {
+  blessEvalRun,
+  compareRuns,
+  deleteEvalDefinition,
+  getEvalDefinition,
+  setEvalDefinitionLive,
+  upsertEvalDefinition,
+} from '#/features/evaluation/server/evals'
+import { listScoresByDefinition } from '#/features/evaluation/server/scores'
 import type {
   EvalCompareRow,
   EvalDefinition,
@@ -63,18 +65,9 @@ import {
   SCORE_TONE_CLASS,
   scoreIsBad,
 } from '#/lib/eval/evaluation'
-import { formatCost } from '#/lib/format'
+import { errMessage, formatCost } from '#/lib/format'
 import { queryKeys, STALE_LIVE_MS, STALE_TELEMETRY_MS } from '#/lib/query-keys'
 import { cn } from '#/lib/utils'
-import {
-  blessEvalRun,
-  compareRuns,
-  deleteEvalDefinition,
-  getEvalDefinition,
-  setEvalDefinitionLive,
-  upsertEvalDefinition,
-} from '#/server/evals'
-import { listScoresByDefinition } from '#/server/scores'
 
 const evalQuery = (id: number) =>
   queryOptions({
@@ -151,21 +144,7 @@ function EvalDetailPage() {
 }
 
 function EvalBreadcrumb({ name }: { name?: string }) {
-  return (
-    <Breadcrumb>
-      <BreadcrumbList>
-        <BreadcrumbItem>
-          <BreadcrumbLink asChild>
-            <Link to="/evals">Evals</Link>
-          </BreadcrumbLink>
-        </BreadcrumbItem>
-        <BreadcrumbSeparator />
-        <BreadcrumbItem>
-          <BreadcrumbPage>{name ?? '—'}</BreadcrumbPage>
-        </BreadcrumbItem>
-      </BreadcrumbList>
-    </Breadcrumb>
-  )
+  return <PageBreadcrumb crumbs={[{ label: 'Evals', to: '/evals' }, { label: name ?? '—' }]} />
 }
 
 function EvalDetailLoaded({ definition, runs }: { definition: EvalDefinition; runs: EvalRun[] }) {
@@ -184,7 +163,7 @@ function EvalDetailLoaded({ definition, runs }: { definition: EvalDefinition; ru
       await queryClient.invalidateQueries({ queryKey: queryKeys.evals.definitions() })
       toast.success(live ? 'Now scoring live traffic' : 'Moved to library')
     },
-    onError: (err) => toast.error(err instanceof Error ? err.message : String(err)),
+    onError: (err) => toast.error(errMessage(err)),
   })
 
   const deleteMutation = useMutation({
@@ -194,7 +173,7 @@ function EvalDetailLoaded({ definition, runs }: { definition: EvalDefinition; ru
       toast.success('Evaluator deleted')
       void navigate({ to: '/evals' })
     },
-    onError: (err) => toast.error(err instanceof Error ? err.message : String(err)),
+    onError: (err) => toast.error(errMessage(err)),
   })
 
   const blessMutation = useMutation({
@@ -204,7 +183,7 @@ function EvalDetailLoaded({ definition, runs }: { definition: EvalDefinition; ru
       await invalidateDetail()
       toast.success(vars.blessed ? 'Run blessed' : 'Run unblessed')
     },
-    onError: (err) => toast.error(err instanceof Error ? err.message : String(err)),
+    onError: (err) => toast.error(errMessage(err)),
   })
 
   const live = definition.mode === 'online'
@@ -737,7 +716,7 @@ function EditDialog({
       toast.success('Evaluator updated')
       await onSaved()
     },
-    onError: (err) => toast.error(err instanceof Error ? err.message : String(err)),
+    onError: (err) => toast.error(errMessage(err)),
   })
 
   const canSubmit = name.trim().length > 0 && !mutation.isPending

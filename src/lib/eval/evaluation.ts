@@ -9,7 +9,6 @@ export type ScoreSource = 'human' | 'llm' | 'code'
 
 export const SCORE_DATA_TYPES: ScoreDataType[] = ['numeric', 'categorical', 'boolean', 'text']
 export const SCORE_TARGET_KINDS: ScoreTargetKind[] = ['span', 'trace', 'session']
-export const SCORE_SOURCES: ScoreSource[] = ['human', 'llm', 'code']
 
 export type Score = {
   id: number
@@ -221,12 +220,6 @@ export type LiveFilter = {
   agentName?: string
 } | null
 
-// A run targets either a dataset or a live trace filter.
-export type EvalTargetSelector =
-  | { kind: 'dataset'; datasetId: number }
-  | { kind: 'traces'; traceIds: string[] }
-  | { kind: 'spans'; spanIds: string[] }
-
 // Per-dimension delta between a baseline run and a head run (regression view).
 // `baseTotal`/`headTotal` are the counts of classifiable (non-errored) cases on
 // each side — 0 means "no cases", distinct from a genuine 0% pass rate.
@@ -354,7 +347,7 @@ function trimNum(n: number): string {
 }
 
 // The polarity/scale hints a dimension's score_config carries, for classifying scores.
-export function configToHint(c: ScoreConfig): ConfigHint {
+function configToHint(c: ScoreConfig): ConfigHint {
   return {
     minValue: c.minValue,
     maxValue: c.maxValue,

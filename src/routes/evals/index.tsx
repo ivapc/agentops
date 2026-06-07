@@ -6,7 +6,6 @@ import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
 import { Page } from '#/components/page'
 import { RelativeTime } from '#/components/relative-time'
-import { ModelSelect } from '#/components/scores/model-select'
 import { Button } from '#/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '#/components/ui/card'
 import {
@@ -28,6 +27,21 @@ import { Switch } from '#/components/ui/switch'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '#/components/ui/table'
 import { Textarea } from '#/components/ui/textarea'
 import { ToggleGroup, ToggleGroupItem } from '#/components/ui/toggle-group'
+import { ModelSelect } from '#/features/evaluation/components/model-select'
+import {
+  getJudgeDefaults,
+  listEvalDefinitions,
+  setEvalDefinitionLive,
+  upsertEvalDefinition,
+} from '#/features/evaluation/server/evals'
+import type { JudgeDefaults } from '#/features/evaluation/server/judge'
+import {
+  getOnlineEvalStats,
+  getScoreRollup,
+  listScoreConfigs,
+  type OnlineEvalStat,
+  type ScoreRollupRow,
+} from '#/features/evaluation/server/scores'
 import {
   type EvalDefinition,
   type EvalScope,
@@ -40,18 +54,9 @@ import {
   type ScoreTone,
 } from '#/lib/eval/evaluation'
 import { JUDGE_TEMPLATES } from '#/lib/eval/judge-templates'
-import { formatCost } from '#/lib/format'
+import { errMessage, formatCost } from '#/lib/format'
 import { queryKeys, STALE_LIVE_MS, STALE_TELEMETRY_MS } from '#/lib/query-keys'
 import { cn } from '#/lib/utils'
-import { getJudgeDefaults, listEvalDefinitions, setEvalDefinitionLive, upsertEvalDefinition } from '#/server/evals'
-import type { JudgeDefaults } from '#/server/judge'
-import {
-  getOnlineEvalStats,
-  getScoreRollup,
-  listScoreConfigs,
-  type OnlineEvalStat,
-  type ScoreRollupRow,
-} from '#/server/scores'
 
 const definitionsQuery = queryOptions({
   queryKey: queryKeys.evals.definitions(),
@@ -344,7 +349,7 @@ function LiveToggle({ id, live }: { id: number; live: boolean }) {
       await queryClient.invalidateQueries({ queryKey: queryKeys.evals.definitions() })
       toast.success(next ? 'Now scoring live traffic' : 'Moved to library')
     },
-    onError: (err) => toast.error(err instanceof Error ? err.message : String(err)),
+    onError: (err) => toast.error(errMessage(err)),
   })
 
   return (
@@ -435,7 +440,7 @@ function SetupEvaluatorDialog({
       reset()
       onOpenChange(false)
     },
-    onError: (err) => toast.error(err instanceof Error ? err.message : String(err)),
+    onError: (err) => toast.error(errMessage(err)),
   })
 
   const canSubmit = name.trim().length > 0 && !mutation.isPending

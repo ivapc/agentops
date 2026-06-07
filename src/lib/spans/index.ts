@@ -38,8 +38,9 @@ export interface Span {
   responseId?: string
   systemFingerprint?: string
   // True when OTel span_status was ERROR. Set at the provider boundary;
-  // classify-span.ts (attribute-only) does not populate it. spanHasError()
-  // ORs this with tool-result error detection.
+  // classify-span.ts (attribute-only) does not populate it. toolError()/
+  // spanHasError() treat this OR errorType/errorMessage OR an error-shaped
+  // toolResult (error/status/is_error/isError) as a failure.
   hasError?: boolean
 
   errorType?: string
@@ -56,6 +57,8 @@ export interface Span {
   // masquerade as multi-turn conversations.
   sessionId?: string
   sessionSource?: 'attribute' | 'trace'
+  // Explicit `ag_ui.thread_id` only — gates the AG-UI panel's thread-id row.
+  agUiThreadId?: string
   agUiRunId?: string
   // Semantic purpose — e.g. "title_generation", "summarization". Set from
   // `gen_ai.operation.purpose`. Distinct from `gen_ai.operation.name` which
@@ -115,13 +118,7 @@ export function normalizeTraceRoots(spans: Span[]): void {
 // source wins; otherwise fall back to the trace_id (one trace = one session)
 // so the UI never invents cross-trace stitching that the data doesn't support.
 export function propagateSessionInTrace(spans: Span[]): void {
-  let attrId: string | undefined
-  for (const s of spans) {
-    if (s.sessionSource === 'attribute' && s.sessionId) {
-      attrId = s.sessionId
-      break
-    }
-  }
+  const attrId = spans.find((s) => s.sessionSource === 'attribute' && s.sessionId)?.sessionId
   if (attrId) {
     for (const s of spans) {
       if (!s.sessionId) {

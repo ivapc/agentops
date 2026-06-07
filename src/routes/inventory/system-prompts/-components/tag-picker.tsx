@@ -6,10 +6,11 @@ import { toast } from 'sonner'
 import { Button } from '#/components/ui/button'
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '#/components/ui/command'
 import { Popover, PopoverContent, PopoverTrigger } from '#/components/ui/popover'
+import { createTag, listTags, setPromptTags } from '#/features/inventory/system-prompts/server'
+import type { Tag } from '#/features/inventory/system-prompts/types'
+import { errMessage } from '#/lib/format'
 import { queryKeys } from '#/lib/query-keys'
 import { cn } from '#/lib/utils'
-import { createTag, listTags, setPromptTags } from '#/server/prompts'
-import type { Tag } from '../-types'
 import { TagChip } from './tag-chip'
 import { nextTagColor, tagColorClass } from './tag-utils'
 
@@ -33,7 +34,7 @@ export function TagPicker({ promptId, selectedIds }: { promptId: number; selecte
       await queryClient.invalidateQueries({ queryKey: queryKeys.prompts.detail(promptId) })
       await queryClient.invalidateQueries({ queryKey: queryKeys.prompts.list() })
     },
-    onError: (err) => toast.error(err instanceof Error ? err.message : String(err)),
+    onError: (err) => toast.error(errMessage(err)),
   })
 
   const createTagMutation = useMutation({
@@ -43,7 +44,7 @@ export function TagPicker({ promptId, selectedIds }: { promptId: number; selecte
       setTagsMutation.mutate([...selectedIds, tag.id])
       setQuery('')
     },
-    onError: (err) => toast.error(err instanceof Error ? err.message : String(err)),
+    onError: (err) => toast.error(errMessage(err)),
   })
 
   const toggle = (tagId: number) => {

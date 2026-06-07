@@ -1,24 +1,17 @@
 import { queryOptions, useQuery } from '@tanstack/react-query'
-import { createFileRoute, Link } from '@tanstack/react-router'
+import { createFileRoute } from '@tanstack/react-router'
 import { useMemo, useState } from 'react'
 import { Page } from '#/components/page'
-import {
-  Breadcrumb,
-  BreadcrumbItem,
-  BreadcrumbLink,
-  BreadcrumbList,
-  BreadcrumbPage,
-  BreadcrumbSeparator,
-} from '#/components/ui/breadcrumb'
+import { PageBreadcrumb } from '#/components/page-breadcrumb'
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '#/components/ui/empty'
 import { Skeleton } from '#/components/ui/skeleton'
+import { getPrompt } from '#/features/inventory/system-prompts/server'
+import type { PromptWithVersions } from '#/features/inventory/system-prompts/types'
+import { NoteSheetButton } from '#/features/notes'
 import { queryKeys } from '#/lib/query-keys'
-import { NoteSheetButton } from '#/routes/notes/-components/note-sheet-button'
-import { getPrompt } from '#/server/prompts'
 import { PromptDetailMeta } from './-components/prompt-detail-header'
 import { PromptEditor } from './-components/prompt-editor'
 import { VersionList } from './-components/version-list'
-import type { PromptWithVersions } from './-types'
 
 const promptQuery = (id: number) =>
   queryOptions({
@@ -67,19 +60,7 @@ function SystemPromptDetailPage() {
 
 function SystemPromptBreadcrumb({ name }: { name?: string }) {
   return (
-    <Breadcrumb>
-      <BreadcrumbList>
-        <BreadcrumbItem>
-          <BreadcrumbLink asChild>
-            <Link to="/inventory/system-prompts">System Prompts</Link>
-          </BreadcrumbLink>
-        </BreadcrumbItem>
-        <BreadcrumbSeparator />
-        <BreadcrumbItem>
-          <BreadcrumbPage>{name ?? '—'}</BreadcrumbPage>
-        </BreadcrumbItem>
-      </BreadcrumbList>
-    </Breadcrumb>
+    <PageBreadcrumb crumbs={[{ label: 'System Prompts', to: '/inventory/system-prompts' }, { label: name ?? '—' }]} />
   )
 }
 

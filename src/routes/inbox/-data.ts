@@ -1,13 +1,13 @@
 import { queryOptions } from '@tanstack/react-query'
 import { createServerFn } from '@tanstack/react-start'
-import { queryKeys, STALE_TELEMETRY_MS } from '#/lib/query-keys'
 import {
   countOpenInboxItems,
   dismissAllOpenInboxItems,
   dismissInboxItem,
   listOpenInboxItems,
   snoozeInboxItem,
-} from '#/server/inbox'
+} from '#/features/inbox/server'
+import { queryKeys, STALE_TELEMETRY_MS } from '#/lib/query-keys'
 
 const fetchInbox = createServerFn({ method: 'GET' }).handler(() => listOpenInboxItems())
 

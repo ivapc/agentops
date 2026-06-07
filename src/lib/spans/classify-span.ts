@@ -47,6 +47,9 @@ export interface Classification {
   systemFingerprint?: string
   sessionId?: string
   sessionSource?: 'attribute' | 'trace'
+  // Explicit `ag_ui.thread_id` only — unlike `sessionId`, which is aliased from
+  // generic attrs and can hold a non-AG-UI value (e.g. an OpenAI `resp_…` id).
+  agUiThreadId?: string
   // Present on chat spans that are part of a CopilotKit/AG-UI run. Absent on
   // utility LLM calls (title generation, summarization, etc.) that share the
   // same trace but are not part of the conversation flow.
@@ -143,6 +146,9 @@ export function classifySpan(name: string, attrs: Record<string, unknown>, spanS
   const agUiRunId = pickString(attrs, ['ag_ui.run_id', 'ag_ui_run_id'])
   if (agUiRunId) c.agUiRunId = agUiRunId
 
+  const agUiThreadId = pickString(attrs, ['ag_ui.thread_id', 'ag_ui_thread_id'])
+  if (agUiThreadId) c.agUiThreadId = agUiThreadId
+
   const operationName = pickCanonical(attrs, 'llmPurpose')
   if (operationName) c.operationName = operationName
 
@@ -165,14 +171,28 @@ export function classifySpan(name: string, attrs: Record<string, unknown>, spanS
     if (toolName) c.toolName = toolName
     const callId = pickString(attrs, ['gen_ai.tool.call.id', 'gen_ai_tool_call_id'])
     if (callId) c.toolCallId = callId
-    const args = pickString(attrs, ['gen_ai.tool.call.arguments', 'gen_ai_tool_call_arguments'])
+    // Scalar form (App Insights/MAF); fall back to the chat-message form
+    // (tanstack via OO renames gen_ai.input/output.messages to llm_input/output).
+    const args =
+      pickString(attrs, ['gen_ai.tool.call.arguments', 'gen_ai_tool_call_arguments']) ??
+      toolMessageContent(pickCanonical(attrs, 'llmInput'))
     if (args) {
       c.inputParams = args
       parseOrFlag(args, c, 'inputParams')
     }
     // Raw-string fallback when parse fails — `undefined` check (not nullish)
     // so literal JSON `null` still passes through.
-    const rawResult = pickString(attrs, ['gen_ai.tool.call.result', 'gen_ai_tool_call_result'])
+    const rawResult =
+      pickString(attrs, ['gen_ai.tool.call.result', 'gen_ai_tool_call_result']) ??
+      toolMessageContent(
+        pickString(attrs, [
+          'gen_ai.output.messages',
+          'gen_ai_output_messages',
+          'llm_output',
+          'llm.output',
+          '_o2_llm_output',
+        ]),
+      )
     if (rawResult !== undefined) {
       const parsed = parseOrFlag(rawResult, c, 'toolResult')
       c.toolResult = parsed !== undefined ? parsed : rawResult
@@ -194,6 +214,25 @@ export function classifySpan(name: string, attrs: Record<string, unknown>, spanS
     ])
     const output = parseOrFlag(outputRaw, c, 'llmOutput')
     if (output !== undefined) c.llmOutput = output
+    else {
+      // Scalar completion (text-only step): no message array, just the reply
+      // string. Wrap as one assistant message. Structured keys above win.
+      const scalar = pickString(attrs, [
+        'llm_output_content',
+        'gen_ai.completion',
+        'gen_ai_completion',
+        'langfuse.observation.output',
+        'langfuse_observation_output',
+        'output.value',
+        'output_value',
+        'ai.response.text',
+        'ai_response_text',
+      ])
+      if (scalar !== undefined) {
+        const parsed = parseJson(scalar)
+        c.llmOutput = Array.isArray(parsed) ? parsed : [{ role: 'assistant', content: scalar }]
+      }
+    }
 
     const cached = pickCanonicalNumber(attrs, 'cacheReadTokens')
     if (cached !== undefined) c.cachedTokens = cached
@@ -230,17 +269,20 @@ export function classifySpan(name: string, attrs: Record<string, unknown>, spanS
 // `gen_ai.system_instructions` is `[{type:"text",content:"..."}, ...]`.
 // Regex fallback handles 8 KB customDimensions truncation slicing
 // mid-content (JSON parse fails on the partial array).
-function parseSystemInstructions(raw: string | undefined): string | undefined {
+export function parseSystemInstructions(raw: string | undefined): string | undefined {
   if (!raw) return undefined
   const parsed = parseJson(raw)
   if (Array.isArray(parsed)) {
-    const parts: string[] = []
-    for (const item of parsed) {
-      if (item && typeof item === 'object' && !Array.isArray(item) && item.type === 'text') {
-        const content = item.content
-        if (typeof content === 'string' && content) parts.push(content)
-      }
-    }
+    const parts = parsed.flatMap((item) =>
+      item &&
+      typeof item === 'object' &&
+      !Array.isArray(item) &&
+      item.type === 'text' &&
+      typeof item.content === 'string' &&
+      item.content
+        ? [item.content]
+        : [],
+    )
     const joined = parts.join('\n\n').trim()
     if (joined) return joined
   }
@@ -281,6 +323,18 @@ function pickAgentName(name: string, attrs: Record<string, unknown>): string | u
   const fromAttr = pickString(attrs, ['gen_ai.agent.name', 'gen_ai_agent_name'])
   if (fromAttr) return fromAttr
   return extractAgentName(name)
+}
+
+// Tool I/O carried as a chat-message array (`[{role,content}]`) rather than a
+// scalar — pull the last message's content out. Non-array payloads pass through.
+function toolMessageContent(raw: string | undefined): string | undefined {
+  if (raw === undefined) return undefined
+  const parsed = parseJson(raw)
+  if (!Array.isArray(parsed)) return raw
+  const last = parsed.at(-1)
+  const content = last && typeof last === 'object' ? (last as { content?: unknown }).content : undefined
+  if (content === undefined) return undefined
+  return typeof content === 'string' ? content : JSON.stringify(content)
 }
 
 function pickToolName(name: string, attrs: Record<string, unknown>): string | undefined {
@@ -349,7 +403,7 @@ function pickStringArray(attrs: Record<string, unknown>, keys: readonly string[]
 
 // Accepts numbers and numeric strings — OpenObserve serializes some SUM()
 // aggregates as strings, and we'd rather take the value than drop it.
-function pickNumber(attrs: Record<string, unknown>, keys: string[]): number | undefined {
+function pickNumber(attrs: Record<string, unknown>, keys: readonly string[]): number | undefined {
   for (const k of keys) {
     const v = attrs[k]
     if (typeof v === 'number' && Number.isFinite(v)) return v

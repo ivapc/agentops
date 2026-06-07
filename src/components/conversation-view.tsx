@@ -5,10 +5,11 @@ import { CopyButton } from '#/components/copy-button'
 import { Markdown } from '#/components/markdown'
 import { ScaffoldGroup } from '#/components/scaffold-group'
 import { Badge } from '#/components/ui/badge'
+import type { ConversationEvent, InspectorView } from '#/features/inspect'
 import { groupScaffolding } from '#/lib/agui-scaffolding'
-import { estimateTokens, formatTime, formatTokens, metricTone } from '#/lib/format'
-import type { ConversationEvent, InspectorView } from '#/lib/inspector-view'
+import { formatTime, formatTokens, metricTone, tokensFromChars } from '#/lib/format'
 import { prettyJson } from '#/lib/json'
+import { toolTone } from '#/lib/tools'
 
 interface ConversationViewProps {
   view: InspectorView
@@ -186,8 +187,6 @@ function renderEvent(event: ConversationEvent, ctx: EventContext) {
     )
   }
 
-  if (event.kind === 'utility_chat') return null
-
   return null
 }
 
@@ -258,20 +257,23 @@ interface ToolCardProps {
 
 function ToolCard({ call, result, expanded, onToggle, selected, onSelect }: ToolCardProps) {
   const status = !result ? 'pending' : result.success ? 'completed' : 'failed'
-  const argumentTokens = estimateTokens(formatValue(call.arguments))
-  const resultTokens = result ? estimateTokens(formatValue(result.result)) : undefined
+  const argumentTokens = tokensFromChars(prettyJson(call.arguments).length)
+  const resultTokens = result ? tokensFromChars(prettyJson(result.result).length) : undefined
+  const tone = toolTone('tool')
 
   return (
-    <div className={['rounded-md border text-sm', selected ? 'border-primary' : 'border-border'].join(' ')}>
+    <div className={['rounded-md border text-sm', selected ? tone.selectedBorder : tone.border].join(' ')}>
       <button
         type="button"
         onClick={() => {
           onToggle()
           onSelect()
         }}
-        className="flex w-full items-center gap-2 rounded-md px-3 py-1.5 text-left hover:bg-accent"
+        className={`flex w-full items-center gap-2 rounded-md px-3 py-1.5 text-left ${tone.hoverBg}`}
       >
-        <span className="text-muted-foreground">⚒</span>
+        <span className={`rounded px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider ${tone.badge}`}>
+          tool
+        </span>
         <span className="truncate font-medium text-foreground">{call.toolName}</span>
         <StatusPill status={status} />
         <span className="ml-auto flex shrink-0 items-center gap-2 text-[11px] text-muted-foreground">
@@ -325,27 +327,21 @@ function AgentCard({ event, nested, expanded, onToggle, selected, onSelect, ctx 
   // agent calls).
   const actions = useMemo(() => nested.filter((e) => e.kind === 'tool_call' || e.kind === 'agent_call'), [nested])
   const hasActions = actions.length > 0
-  const inputTokens = estimateTokens(formatValue(event.input))
-  const outputTokens = estimateTokens(formatValue(event.result))
+  const inputTokens = tokensFromChars(prettyJson(event.input).length)
+  const outputTokens = tokensFromChars(prettyJson(event.result).length)
+  const tone = toolTone('agent')
 
   return (
-    <div
-      className={[
-        'rounded-md border text-sm',
-        selected
-          ? 'border-emerald-500/60 dark:border-emerald-400/60'
-          : 'border-emerald-500/30 dark:border-emerald-400/30',
-      ].join(' ')}
-    >
+    <div className={['rounded-md border text-sm', selected ? tone.selectedBorder : tone.border].join(' ')}>
       <button
         type="button"
         onClick={() => {
           onToggle()
           onSelect()
         }}
-        className="flex w-full items-center gap-2 rounded-md px-3 py-1.5 text-left hover:bg-emerald-500/5 dark:hover:bg-emerald-400/5"
+        className={`flex w-full items-center gap-2 rounded-md px-3 py-1.5 text-left ${tone.hoverBg}`}
       >
-        <span className="rounded bg-emerald-500/15 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider text-emerald-700 dark:text-emerald-300">
+        <span className={`rounded px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider ${tone.badge}`}>
           agent
         </span>
         <span className="truncate font-medium text-foreground">
@@ -364,7 +360,7 @@ function AgentCard({ event, nested, expanded, onToggle, selected, onSelect, ctx 
       </button>
 
       {expanded && (
-        <div className="space-y-2 border-t border-emerald-500/15 px-3 py-2 dark:border-emerald-400/15">
+        <div className={`space-y-2 border-t px-3 py-2 ${tone.border}`}>
           <KeyValueBlock label="Input" value={event.input} />
           <KeyValueBlock label="Output" value={event.result} />
           {hasActions && (
@@ -386,7 +382,7 @@ function StatusPill({ status }: { status: 'pending' | 'completed' | 'failed' }) 
 }
 
 function KeyValueBlock({ label, value }: { label: string; value: unknown }) {
-  const formatted = formatValue(value)
+  const formatted = prettyJson(value)
   return (
     <div className="group/kv relative">
       <div className="mb-1 flex items-center justify-between gap-2">
@@ -398,8 +394,4 @@ function KeyValueBlock({ label, value }: { label: string; value: unknown }) {
       </pre>
     </div>
   )
-}
-
-function formatValue(v: unknown): string {
-  return prettyJson(v)
 }
