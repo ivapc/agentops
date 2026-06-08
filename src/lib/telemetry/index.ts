@@ -1,4 +1,6 @@
 import { getCookie } from '@tanstack/react-start/server'
+import { registerExtensions } from '#/extensions/server/bootstrap'
+import { getExtensions } from '#/lib/extension-registry'
 import type { Span } from '#/lib/spans'
 import * as analytics from './analytics'
 import { createAppInsightsProvider } from './app-insights'
@@ -227,6 +229,13 @@ export async function listToolErrorRates(opts?: TopOpts): Promise<ToolErrorRow[]
 }
 
 export async function listToolPayloadSizes(opts?: TopOpts): Promise<ToolPayloadRow[]> {
+  // An extension can serve real sizes past the App Insights 8 KB truncation;
+  // fall back to the provider's (capped) numbers when none does.
+  registerExtensions()
+  for (const ext of getExtensions()) {
+    const rows = await ext.toolPayloadSizes?.(opts)
+    if (rows) return rows
+  }
   return analytics.fetchToolPayloadSizes(getActiveProvider(), opts)
 }
 

@@ -1,5 +1,5 @@
 import type { EnrichSpanInput, SpanEnrichment } from '../../types'
-import { getContainer } from '../cosmos-client'
+import { queryMessages } from '../cosmos-client'
 
 /**
  * Cosmos DB source — fetches the full untruncated system prompt for an
@@ -15,42 +15,43 @@ export async function cosmosSystemPrompt(input: EnrichSpanInput): Promise<SpanEn
   const threadId = input.sessionId
   if (!threadId) return null
 
-  const container = getContainer('messages')
-  if (!container) return null
-
   try {
-    const { resources } = await container.items
-      .query<{ message: string }>({
-        query: `SELECT c.message FROM c
-          WHERE c.conversationId = @threadId
-            AND c.type = "ChatMessage" AND c.role = "system"
-          ORDER BY c.timestamp ASC
-          OFFSET 0 LIMIT 1`,
-        parameters: [{ name: '@threadId', value: threadId }],
-      })
-      .fetchAll()
+    const resources = await queryMessages<{ message: string }>({
+      query: `SELECT c.message FROM c
+        WHERE c.conversationId = @threadId
+          AND c.type = "ChatMessage" AND c.role = "system"
+        ORDER BY c.timestamp ASC
+        OFFSET 0 LIMIT 1`,
+      parameters: [{ name: '@threadId', value: threadId }],
+    })
 
-    if (!resources || resources.length === 0) return null
+    if (resources.length === 0) return null
 
     const content = resources[0].message
     if (!content || typeof content !== 'string') return null
 
-    // The message field may be a plain string or a JSON-encoded content array.
-    // Try to parse structured content first (MAF format: [{type:"text",content:"..."}]).
+    // MAF SDK format: {"Role":"system","Contents":[{"$type":"text","Text":"..."}]}
+    // Fall back to treating the whole field as a plain string if parsing fails.
     const parsed = safeParse(content)
-    if (Array.isArray(parsed)) {
-      const parts: string[] = []
-      for (const item of parsed) {
-        if (item && typeof item === 'object' && !Array.isArray(item) && item.type === 'text') {
-          const text = (item as { content?: string }).content
-          if (typeof text === 'string' && text) parts.push(text)
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      const obj = parsed as Record<string, unknown>
+      const contents = obj['Contents']
+      if (Array.isArray(contents)) {
+        const parts: string[] = []
+        for (const item of contents) {
+          if (item && typeof item === 'object') {
+            const t = (item as Record<string, unknown>)
+            // $type:"text" with Text field (MAF SDK)
+            if (t['$type'] === 'text' && typeof t['Text'] === 'string' && t['Text']) {
+              parts.push(t['Text'] as string)
+            }
+          }
         }
+        const joined = parts.join('\n\n').trim()
+        if (joined) return { systemInstructions: joined }
       }
-      const joined = parts.join('\n\n').trim()
-      if (joined) return { systemInstructions: joined }
     }
 
-    // Plain string content
     const trimmed = content.trim()
     return trimmed ? { systemInstructions: trimmed } : null
   } catch (e) {

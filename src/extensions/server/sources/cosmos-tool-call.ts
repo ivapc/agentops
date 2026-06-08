@@ -1,5 +1,5 @@
 import type { EnrichSpanInput, SpanEnrichment } from '../../types'
-import { getContainer } from '../cosmos-client'
+import { queryMessages } from '../cosmos-client'
 
 /**
  * Cosmos DB source — fetches the full untruncated arguments + result for a
@@ -16,42 +16,35 @@ export async function cosmosToolCall(input: EnrichSpanInput): Promise<SpanEnrich
   const callId = input.toolCallId
   if (!threadId || !callId) return null
 
-  const container = getContainer('messages')
-  if (!container) return null
-
   try {
     // Single-partition queries (~2-3 RU each): conversationId = threadId.
     // Fetch both arguments (assistant role, functionCall) and result (tool
     // role, functionResult) for this callId. Run in parallel.
-    const [callRes, resultRes] = await Promise.all([
-      container.items
-        .query<{ message: string }>({
-          query: `SELECT c.message FROM c
-            WHERE c.conversationId = @threadId
-              AND c.type = "ChatMessage" AND c.role = "assistant"
-              AND CONTAINS(c.message, @callId)`,
-          parameters: [
-            { name: '@threadId', value: threadId },
-            { name: '@callId', value: callId },
-          ],
-        })
-        .fetchAll(),
-      container.items
-        .query<{ message: string }>({
-          query: `SELECT c.message FROM c
-            WHERE c.conversationId = @threadId
-              AND c.type = "ChatMessage" AND c.role = "tool"
-              AND CONTAINS(c.message, @callId)`,
-          parameters: [
-            { name: '@threadId', value: threadId },
-            { name: '@callId', value: callId },
-          ],
-        })
-        .fetchAll(),
+    const [callDocs, resultDocs] = await Promise.all([
+      queryMessages<{ message: string }>({
+        query: `SELECT c.message FROM c
+          WHERE c.conversationId = @threadId
+            AND c.type = "ChatMessage" AND c.role = "assistant"
+            AND CONTAINS(c.message, @callId)`,
+        parameters: [
+          { name: '@threadId', value: threadId },
+          { name: '@callId', value: callId },
+        ],
+      }),
+      queryMessages<{ message: string }>({
+        query: `SELECT c.message FROM c
+          WHERE c.conversationId = @threadId
+            AND c.type = "ChatMessage" AND c.role = "tool"
+            AND CONTAINS(c.message, @callId)`,
+        parameters: [
+          { name: '@threadId', value: threadId },
+          { name: '@callId', value: callId },
+        ],
+      }),
     ])
 
-    const toolInput = extractCallArguments(callRes.resources, callId)
-    const toolResult = extractCallResult(resultRes.resources, callId)
+    const toolInput = extractCallArguments(callDocs, callId)
+    const toolResult = extractCallResult(resultDocs, callId)
 
     const enrichment: SpanEnrichment = {}
     if (toolInput) enrichment.toolInput = toolInput

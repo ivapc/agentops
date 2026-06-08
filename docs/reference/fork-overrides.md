@@ -8,9 +8,10 @@ Files in this fork that diverge from upstream agentops.
 | ----------------------------------------- | ----------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
 | `src/components/inspect/detail-panel.tsx` | `JsonBlock`: unwrap string-valued results that contain JSON and pretty-print via `CodeBlock` | MCP/tool results are double-encoded strings; upstream renders them as raw unformatted text |
 | `src/components/ai-elements/tool.tsx`     | `ToolOutput`: try-parse string output as JSON; pretty-print if object/array                 | Same double-encoding issue in the LLM span messages view                                   |
-| `src/components/inspect/overview.tsx`     | Imports `useToolDefinitionsEnrichment`; `SessionTools` enriches truncated `gen_ai.tool.definitions`   | App Insights truncates at 8192 chars; full tool definitions from Cosmos            |
-| `src/lib/telemetry/index.ts`              | `listToolPayloadSizes` calls extensions directly instead of HTTP sidecar                              | Eliminates `TOOL_PAYLOAD_API_URL` / `external/cosmos-payloads/serve.ts`            |
-| `src/extensions/` (entire directory)      | Fork-only adapter layer — Cosmos SDK client + sources (`cosmos-messages`, `cosmos-tool-call`) + hooks | Isolated; does not exist upstream; zero merge conflict risk                        |
+| `src/lib/extension-registry.ts`           | Upstream-owned registry: `Extension` interface (`resolveTruncatedAttr?`, `toolPayloadSizes?`), ships empty | Single seam forks plug into; keeps upstream consumers source-agnostic        |
+| `src/features/inspect/server/enrich-span.ts` | `resolveTruncatedAttr` loops `getExtensions()`; side-effect imports the fork bootstrap                | Recover Cosmos values for attrs App Insights truncates at 8192 chars               |
+| `src/lib/telemetry/index.ts`              | `listToolPayloadSizes` loops `getExtensions()` for real sizes, falls back to the provider             | Cosmos serves untruncated tool payload sizes past the 8 KB cap                     |
+| `src/extensions/` (entire directory)      | Fork-only adapter — Cosmos client + sources; `bootstrap.ts` registers one `cosmosExtension`           | Isolated; does not exist upstream; zero merge conflict risk                        |
 
 ## Fork-local attributes
 

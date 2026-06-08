@@ -1,6 +1,6 @@
 import type { JsonValue } from '#/lib/json'
 import type { EnrichSpanInput, SpanEnrichment } from '../../types'
-import { getContainer } from '../cosmos-client'
+import { queryMessages } from '../cosmos-client'
 
 /**
  * Cosmos DB source — fetches the full untruncated tool definitions for a chat
@@ -19,26 +19,21 @@ export async function cosmosToolDefinitions(input: EnrichSpanInput): Promise<Spa
   const threadId = input.sessionId
   if (!threadId) return null
 
-  const container = getContainer('messages')
-  if (!container) return null
-
   try {
     // Fetch assistant messages to find function definitions in the thread.
     // The definitions appear in message.Contents[].Functions or similar
     // depending on the MAF SDK version.
-    const { resources: docs } = await container.items
-      .query<{ message: string; timestamp: number }>({
-        query: `SELECT c.message, c.timestamp FROM c
-          WHERE c.conversationId = @threadId
-            AND c.type = "ChatMessage"
-            AND c.role = "assistant"
-            AND CONTAINS(c.message, "functions")
-          ORDER BY c.timestamp DESC`,
-        parameters: [{ name: '@threadId', value: threadId }],
-      })
-      .fetchAll()
+    const docs = await queryMessages<{ message: string; timestamp: number }>({
+      query: `SELECT c.message, c.timestamp FROM c
+        WHERE c.conversationId = @threadId
+          AND c.type = "ChatMessage"
+          AND c.role = "assistant"
+          AND CONTAINS(c.message, "functions")
+        ORDER BY c.timestamp DESC`,
+      parameters: [{ name: '@threadId', value: threadId }],
+    })
 
-    if (!docs || docs.length === 0) return null
+    if (docs.length === 0) return null
 
     // Parse and extract tool definitions from the most recent message.
     for (const doc of docs) {

@@ -3,7 +3,7 @@ import { sql } from 'drizzle-orm'
 import { db } from '#/db'
 import { metricRollup } from '#/db/schema'
 import type { ToolPayloadRow, TopOpts } from '#/lib/telemetry/types'
-import { getContainer, isConfigured } from '../cosmos-client'
+import { getMessageContainers, isConfigured, queryMessages } from '../cosmos-client'
 
 const METRIC_KEY = 'tool_payload_size'
 
@@ -21,17 +21,12 @@ export async function cosmosToolPayloads(opts?: TopOpts): Promise<ToolPayloadRow
   try {
     const watermark = getWatermark()
     const now = Math.floor(Date.now() / 1000)
+    const from = watermark === 0 ? now - 86400 : watermark
 
-    if (watermark === 0) {
-      // First ever: seed from last 24h
-      const container = getContainer('messages')
-      if (!container) return null
-      await syncFromCosmos(container, now - 86400, now)
-    } else if (now - watermark > SYNC_INTERVAL_SEC) {
-      // Stale: fetch delta
-      const container = getContainer('messages')
-      if (!container) return buildRowsFromDb(limit)
-      await syncFromCosmos(container, watermark, now)
+    if (watermark === 0 || now - watermark > SYNC_INTERVAL_SEC) {
+      for (const container of getMessageContainers()) {
+        await syncFromCosmos(container, from, now)
+      }
     }
 
     return buildRowsFromDb(limit)
@@ -177,20 +172,16 @@ async function fetchPaged<T>(
  */
 export async function fetchToolPayloadSample(toolName: string, threadId: string): Promise<string | null> {
   if (!isConfigured()) return null
-  const container = getContainer('messages')
-  if (!container) return null
 
   try {
     // Get functionCall messages to find callIds for this tool
-    const { resources: callDocs } = await container.items
-      .query<{ message: string }>({
-        query: `SELECT c.message FROM c
+    const callDocs = await queryMessages<{ message: string }>({
+      query: `SELECT c.message FROM c
         WHERE c.conversationId = @threadId
           AND c.type = "ChatMessage" AND c.role = "assistant"
           AND CONTAINS(c.message, "functionCall")`,
-        parameters: [{ name: '@threadId', value: threadId }],
-      })
-      .fetchAll()
+      parameters: [{ name: '@threadId', value: threadId }],
+    })
 
     const callIds = new Set<string>()
     for (const doc of callDocs) {
@@ -211,15 +202,13 @@ export async function fetchToolPayloadSample(toolName: string, threadId: string)
     if (callIds.size === 0) return null
 
     // Get functionResult messages for those callIds
-    const { resources: resultDocs } = await container.items
-      .query<{ message: string }>({
-        query: `SELECT c.message FROM c
+    const resultDocs = await queryMessages<{ message: string }>({
+      query: `SELECT c.message FROM c
         WHERE c.conversationId = @threadId
           AND c.type = "ChatMessage" AND c.role = "tool"
           AND CONTAINS(c.message, "functionResult")`,
-        parameters: [{ name: '@threadId', value: threadId }],
-      })
-      .fetchAll()
+      parameters: [{ name: '@threadId', value: threadId }],
+    })
 
     let largest = ''
     for (const doc of resultDocs) {

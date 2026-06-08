@@ -1,4 +1,4 @@
-import { type Container, CosmosClient, type Database } from '@azure/cosmos'
+import { type Container, CosmosClient, type Database, type SqlQuerySpec } from '@azure/cosmos'
 
 /**
  * Shared Cosmos client for all extension sources. Lazily initialized from
@@ -42,6 +42,25 @@ function getDatabase(): Database | null {
 export function getContainer(name: string): Container | null {
   const db = getDatabase()
   return db ? db.container(name) : null
+}
+
+// teammate and teammate-2 write conversations to separate mirrored containers;
+// a thread lives in exactly one, so the first with rows wins.
+const MESSAGE_CONTAINERS = ['messages', 'messages-test']
+
+export async function queryMessages<T>(spec: SqlQuerySpec): Promise<T[]> {
+  for (const name of MESSAGE_CONTAINERS) {
+    const container = getContainer(name)
+    if (!container) continue
+    const { resources } = await container.items.query<T>(spec).fetchAll()
+    if (resources?.length) return resources
+  }
+  return []
+}
+
+/** Handles for every message container, for callers that page rather than query once. */
+export function getMessageContainers(): Container[] {
+  return MESSAGE_CONTAINERS.map(getContainer).filter((c): c is Container => c !== null)
 }
 
 /** Returns true if Cosmos env vars are set. */

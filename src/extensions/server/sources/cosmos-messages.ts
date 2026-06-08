@@ -1,5 +1,5 @@
 import type { EnrichSpanInput, SpanEnrichment } from '../../types'
-import { getContainer } from '../cosmos-client'
+import { queryMessages } from '../cosmos-client'
 
 /**
  * Cosmos DB source — queries the messages container for full LLM message
@@ -9,8 +9,6 @@ import { getContainer } from '../cosmos-client'
  */
 export async function cosmosMessages(input: EnrichSpanInput): Promise<SpanEnrichment | null> {
   if (input.operation !== undefined && input.operation !== 'chat') return null
-  const container = getContainer('messages')
-  if (!container) return null
 
   // conversationId in Cosmos is the Teams thread ID (ag_ui.thread_id),
   // which agentops surfaces as span.sessionId.
@@ -29,11 +27,12 @@ export async function cosmosMessages(input: EnrichSpanInput): Promise<SpanEnrich
   `
 
   try {
-    const { resources } = await container.items
-      .query({ query, parameters: [{ name: '@threadId', value: threadId }] })
-      .fetchAll()
+    const resources = await queryMessages<Record<string, unknown>>({
+      query,
+      parameters: [{ name: '@threadId', value: threadId }],
+    })
 
-    if (!resources || resources.length === 0) return null
+    if (resources.length === 0) return null
 
     // Reconstruct LLM input messages from conversation history
     const inputMessages = resources
