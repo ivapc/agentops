@@ -87,8 +87,8 @@ export interface TraceSummary {
   taskSource?: string
 }
 
-// A session is the spine of a multi-turn conversation per
-// `docs/plans/sessions.md` — many runs share one sessionId. `source`
+// A session is the spine of a multi-turn conversation (see
+// `docs/explanation/sessions-vs-live.md`) — many runs share one sessionId. `source`
 // discloses whether the id came from a real attribute (`attribute`) or
 // is just the trace id (`trace`), which means the data has no multi-turn
 // linkage and one trace == one session.
@@ -118,7 +118,6 @@ export type InventoryDiscoveryKind = 'new_tool' | 'new_agent'
 export interface InventoryObservation {
   kind: 'mcp_tool' | 'agent'
   name: string
-  namespace: string
   firstSeenMs: number
   lastSeenMs: number
   traceId?: string
@@ -243,7 +242,7 @@ export interface ListLogsOpts extends WindowOpts {
 // not a shared dialect.
 interface BaseProvider {
   fingerprint: string
-  getTrace(traceId: string, opts?: GetTraceOpts): Promise<TraceFetch>
+  getTrace(traceId: string): Promise<TraceFetch>
   listTraces?(opts?: ListTracesOpts): Promise<TraceSummary[]>
   listSpans?(opts?: ListSpansOpts): Promise<SpanSummary[]>
   listSessions?(opts?: ListSessionsOpts): Promise<{ sessions: SessionSummary[]; truncated: boolean }>

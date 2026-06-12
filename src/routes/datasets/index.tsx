@@ -9,12 +9,12 @@ import {
   getFilteredRowModel,
   useReactTable,
 } from '@tanstack/react-table'
-import { formatDistanceToNow } from 'date-fns'
 import { CirclePlay, Database, Plus, Search } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { toast } from 'sonner'
 import { DataTableFacetedFilter } from '#/components/data-table-faceted-filter'
 import { Page } from '#/components/page'
+import { RelativeTime } from '#/components/relative-time'
 import { Badge } from '#/components/ui/badge'
 import { Button } from '#/components/ui/button'
 import {
@@ -31,18 +31,17 @@ import { Input } from '#/components/ui/input'
 import { Label } from '#/components/ui/label'
 import { Textarea } from '#/components/ui/textarea'
 import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip'
+import type { DatasetListItem } from '#/features/evaluation'
 import { createDataset, runDataset } from '#/features/evaluation/server/datasets'
 import { errMessage } from '#/lib/format'
 import { queryKeys } from '#/lib/query-keys'
 import { DataGridBody } from './-components/data-grid'
-import { type DatasetListItem, datasetsListQuery } from './-data'
+import { datasetsListQuery } from './-data'
 
 export const Route = createFileRoute('/datasets/')({
   loader: ({ context }) => context.queryClient.ensureQueryData(datasetsListQuery()),
   component: DatasetsListPage,
 })
-
-const relTime = (ms: number) => formatDistanceToNow(new Date(ms), { addSuffix: true })
 
 function makeColumns(
   onRun: (d: DatasetListItem) => void,
@@ -78,17 +77,18 @@ function makeColumns(
     {
       id: 'lastRun',
       header: 'Last run',
-      cell: ({ row }) => (
-        <span className="text-sm text-muted-foreground">
-          {row.original.lastRunAt != null ? relTime(row.original.lastRunAt) : '—'}
-        </span>
-      ),
+      cell: ({ row }) =>
+        row.original.lastRunAt != null ? (
+          <RelativeTime ts={row.original.lastRunAt} className="text-sm text-muted-foreground" />
+        ) : (
+          <span className="text-sm text-muted-foreground">—</span>
+        ),
       meta: { headClassName: 'w-28' },
     },
     {
       id: 'updated',
       header: 'Updated',
-      cell: ({ row }) => <span className="text-sm text-muted-foreground">{relTime(row.original.updatedAt)}</span>,
+      cell: ({ row }) => <RelativeTime ts={row.original.updatedAt} className="text-sm text-muted-foreground" />,
       meta: { headClassName: 'w-28' },
     },
     {

@@ -1,6 +1,6 @@
 import type { JsonValue } from '#/lib/json'
-import type { Span } from '.'
-import { asMessages, type ChatMessage } from './conversation'
+import type { Span } from '#/lib/spans'
+import { asMessages, type ChatMessage } from '#/lib/spans/conversation'
 
 export type SpanInput = Pick<
   Span,
@@ -19,36 +19,20 @@ export interface ChatBreakdown {
 
 type Encoder = (text: string) => number
 
-type Family = 'openai-o200k' | 'openai-cl100k' | 'anthropic'
-
 interface ResolvedEncoder {
-  family: Family
+  isAnthropic: boolean
   count: Encoder
 }
 
 let encoderPromise: Promise<Encoder> | undefined
 
-function resolveFamily(model: string | undefined): Family {
+function isAnthropic(model: string | undefined): boolean {
   const m = (model ?? '').toLowerCase()
-  if (m.startsWith('claude') || m.includes('anthropic')) return 'anthropic'
-  if (
-    m.startsWith('gpt-4o') ||
-    m.startsWith('chatgpt-4o') ||
-    m.startsWith('gpt-4.1') ||
-    m.startsWith('gpt-4.5') ||
-    m.startsWith('gpt-5') ||
-    m.startsWith('o1') ||
-    m.startsWith('o3') ||
-    m.startsWith('o4') ||
-    m.startsWith('codex')
-  ) {
-    return 'openai-o200k'
-  }
-  return 'openai-cl100k'
+  return m.startsWith('claude') || m.includes('anthropic')
 }
 
-// Only o200k BPE is loaded locally; cl100k/Anthropic have no accurate local
-// tokenizer so they estimate with the same encoder.
+// Only o200k BPE is loaded locally; non-Anthropic models have no accurate
+// local tokenizer so they estimate with the same encoder.
 function loadEncoder(): Promise<Encoder> {
   encoderPromise ??= import('gpt-tokenizer/encoding/o200k_base').then(
     (mod): Encoder =>
@@ -59,7 +43,7 @@ function loadEncoder(): Promise<Encoder> {
 }
 
 async function resolveEncoder(model: string | undefined): Promise<ResolvedEncoder> {
-  return { family: resolveFamily(model), count: await loadEncoder() }
+  return { isAnthropic: isAnthropic(model), count: await loadEncoder() }
 }
 
 function partText(parts: ChatMessage['parts']): string {
@@ -78,9 +62,9 @@ function countMessages(messages: ChatMessage[], enc: ResolvedEncoder): number {
   for (const msg of messages) {
     total += enc.count(msg.role)
     total += enc.count(partText(msg.parts))
-    if (enc.family !== 'anthropic') total += 4
+    if (!enc.isAnthropic) total += 4
   }
-  if (enc.family !== 'anthropic') total += 3
+  if (!enc.isAnthropic) total += 3
   return total
 }
 
@@ -93,7 +77,6 @@ export async function breakdownChat(span: SpanInput): Promise<ChatBreakdown> {
   const enc = await resolveEncoder(span.model)
   const inputTokens = span.inputTokens ?? 0
 
-  // --- Compute systemTokens ---
   // Prefer direct tokenization of systemInstructions when present (survives
   // even when llmInput is absent or truncated). Fall back to counting the
   // system role messages inside llmInput.
@@ -104,12 +87,11 @@ export async function breakdownChat(span: SpanInput): Promise<ChatBreakdown> {
   const systemTokensFromAttr = span.systemInstructions ? enc.count(span.systemInstructions) : 0
   const systemTokens = Math.max(systemTokensFromInput, systemTokensFromAttr)
 
-  // --- Compute toolDefsTokens ---
   // When the raw definitions are available, tokenize them directly — far more
   // accurate than the residual approach and works even without llmInput.
   const toolDefsTokens = span.toolDefinitions != null ? enc.count(JSON.stringify(span.toolDefinitions)) : null // signals "use residual below"
 
-  // --- messagesTokens and toolDefsTokens (residual logic) ---
+  // Residual logic:
   // • If llmInput is present: messagesTokens = direct count; toolDefsTokens = residual if not computed above.
   // • If llmInput is absent but toolDefs are present: toolDefsTokens = direct count; messagesTokens = residual.
   // • If neither: everything collapses into the residual bucket (toolDefsTokens) — caller should hide the bar.

@@ -2,22 +2,22 @@ import { useQuery } from '@tanstack/react-query'
 import { createFileRoute } from '@tanstack/react-router'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { AUTO_REFRESH_MS } from '#/components/auto-refresh-select'
-import { ConversationView } from '#/components/conversation-view'
 import { PageBreadcrumb } from '#/components/page-breadcrumb'
 import { SiteHeader } from '#/components/site-header'
 import { Badge } from '#/components/ui/badge'
 import {
   buildInspectorView,
   ContextWindow,
+  ConversationView,
   InspectLayout,
   type InspectView,
   InspectViewBar,
+  traceSpansQuery,
   useRawRoots,
   useSpanSearch,
 } from '#/features/inspect'
 import { useInspectAutoRefresh } from '#/hooks/use-auto-refresh'
 import type { Span } from '#/lib/spans'
-import { traceSpansQuery } from './-data'
 
 export const Route = createFileRoute('/traces/$traceId')({
   loader: ({ context, params }) => context.queryClient.ensureQueryData(traceSpansQuery(params.traceId)),

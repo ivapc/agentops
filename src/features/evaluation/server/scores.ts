@@ -1,9 +1,10 @@
 import { createServerFn } from '@tanstack/react-start'
-import { and, desc, eq, gte, inArray, isNotNull, isNull, sql } from 'drizzle-orm'
+import { and, desc, eq, gte, isNotNull, isNull, sql } from 'drizzle-orm'
 import { db } from '#/db'
 import { scoreConfigs, scores } from '#/db/schema'
 import {
   type ConfigHint,
+  configToHint,
   numericFraction,
   SCORE_DATA_TYPES,
   SCORE_TARGET_KINDS,
@@ -20,7 +21,6 @@ import {
 } from '#/lib/eval/evaluation'
 import type { JsonValue } from '#/lib/json'
 
-// coercion
 function asDataType(value: unknown): ScoreDataType {
   if (typeof value !== 'string' || !SCORE_DATA_TYPES.includes(value as ScoreDataType)) {
     throw new Error(`Invalid score dataType: ${String(value)}`)
@@ -93,7 +93,6 @@ function asOptionalInt(value: unknown, label: string): number | null | undefined
   return n == null ? n : Math.trunc(n)
 }
 
-// row → DTO
 function toScore(row: typeof scores.$inferSelect): Score {
   return {
     id: row.id,
@@ -145,24 +144,12 @@ function asLabelList(value: unknown): string[] | null {
   return out.length > 0 ? out : null
 }
 
-// Project a config row into the polarity/scale hint pass/fail aggregation reads.
-export function configToHint(c: typeof scoreConfigs.$inferSelect): ConfigHint {
-  return {
-    minValue: c.minValue,
-    maxValue: c.maxValue,
-    passLabels: (c.passLabels ?? null) as string[] | null,
-    failLabels: (c.failLabels ?? null) as string[] | null,
-    direction: c.direction,
-  }
-}
-
 // Per-dimension polarity/scale hints, keyed by name — the source of truth for
 // pass/fail + numeric scale used by every aggregation (badges, rollup, compare).
 export function scaleMap(configs: (typeof scoreConfigs.$inferSelect)[]): Map<string, ConfigHint> {
-  return new Map(configs.map((c) => [c.name, configToHint(c)]))
+  return new Map(configs.map((c) => [c.name, configToHint(toScoreConfig(c))]))
 }
 
-// score_config (dimension registry)
 export const listScoreConfigs = createServerFn({ method: 'GET' }).handler(async (): Promise<ScoreConfig[]> => {
   const rows = await db.select().from(scoreConfigs).orderBy(scoreConfigs.archived, scoreConfigs.name)
   return rows.map(toScoreConfig)
@@ -242,6 +229,8 @@ export const upsertScoreConfig = createServerFn({ method: 'POST' })
     return toScoreConfig(row)
   })
 
+// TODO: no UI caller yet, but keep — sole writer of scoreConfigs.archived, which
+// listScoreConfigs ordering and the active-config filters read. Wire up or drop the column.
 export const setScoreConfigArchived = createServerFn({ method: 'POST' })
   .inputValidator((input: { id: number; archived: boolean }) => ({
     id: Number(input.id),
@@ -254,7 +243,6 @@ export const setScoreConfigArchived = createServerFn({ method: 'POST' })
       .where(eq(scoreConfigs.id, data.id))
   })
 
-// scores
 export const listScoresForTarget = createServerFn({ method: 'GET' })
   .inputValidator((input: { targetKind: ScoreTargetKind; targetId: string }) => ({
     targetKind: asTargetKind(input.targetKind),
@@ -511,8 +499,8 @@ export const getOnlineEvalStats = createServerFn({ method: 'GET' }).handler(
 )
 
 // Path C: ingest gen_ai.evaluation.* events as score rows
-// Append-only. `source` defaults to 'llm'. Used by POST /api/evals/ingest and
-// the in-app judge runner. Each event maps one verdict → one score row.
+// Append-only. `source` defaults to 'llm'. Used by POST /api/evals/ingest.
+// Each event maps one verdict → one score row.
 export type IngestScoreEvent = {
   targetKind?: ScoreTargetKind
   targetId?: string
@@ -581,29 +569,25 @@ export async function ingestScoreEvents(events: IngestScoreEvent[]): Promise<{ i
   const now = new Date()
   const values: (typeof scores.$inferInsert)[] = []
   for (const e of events) {
-    const targetId = asOptString(e.targetId) ?? asOptString(e.responseId)
+    const targetId = e.targetId ?? e.responseId
     if (!targetId) continue // need something to attach to
-    const name = asOptString(e.name)
-    const evaluator = asOptString(e.evaluator)
-    if (!name || !evaluator) continue
-    const source: ScoreSource = e.source === 'human' || e.source === 'code' ? e.source : 'llm'
     values.push({
-      targetKind: e.targetKind && SCORE_TARGET_KINDS.includes(e.targetKind) ? e.targetKind : 'trace',
+      targetKind: e.targetKind ?? 'trace',
       targetId,
-      parentTraceId: asOptString(e.parentTraceId),
-      parentSessionId: asOptString(e.parentSessionId),
-      responseId: asOptString(e.responseId),
-      name,
+      parentTraceId: e.parentTraceId ?? null,
+      parentSessionId: e.parentSessionId ?? null,
+      responseId: e.responseId ?? null,
+      name: e.name,
       dataType: inferDataType(e),
-      value: asOptNumber(e.value),
-      label: asOptString(e.label),
-      explanation: asOptString(e.explanation),
-      source,
-      evaluator,
-      errorType: asOptString(e.errorType),
-      runId: asOptInt(e.runId),
-      definitionId: asOptInt(e.definitionId),
-      datasetRunItemId: asOptInt(e.datasetRunItemId),
+      value: e.value ?? null,
+      label: e.label ?? null,
+      explanation: e.explanation ?? null,
+      source: e.source ?? 'llm',
+      evaluator: e.evaluator,
+      errorType: e.errorType ?? null,
+      runId: e.runId ?? null,
+      definitionId: e.definitionId ?? null,
+      datasetRunItemId: e.datasetRunItemId ?? null,
       metadata: e.metadata ?? null,
       createdAt: now,
     })
@@ -634,11 +618,3 @@ export const listScoresByDefinition = createServerFn({ method: 'GET' })
       .limit(200)
     return rows.map(toScore)
   })
-
-// Latest run-less scores for a set of run ids' definitions — used by compare.
-export async function scoresForRuns(runIds: number[]): Promise<Score[]> {
-  if (runIds.length === 0) return []
-  const { db: conn } = await import('#/db')
-  const rows = await conn.select().from(scores).where(inArray(scores.runId, runIds))
-  return rows.map(toScore)
-}

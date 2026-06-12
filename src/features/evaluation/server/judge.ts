@@ -1,20 +1,19 @@
 // In-app LLM judge (Path B). Calls the model through the Vercel AI SDK with a
 // BYO key from env (OPENAI_API_KEY / ANTHROPIC_API_KEY / AZURE_OPENAI_API_KEY),
 // reading only normalized Span fields so it scores any emitter identically.
-// Provider is inferred from the model id (claude* → Anthropic, azure/* → Azure
-// OpenAI, else OpenAI).
+// Provider routing is `judgeModelProvider`'s registry lookup (azure/* prefixed
+// deployments → Azure OpenAI, unknown ids → OpenAI).
 
 import { createAnthropic } from '@ai-sdk/anthropic'
 import { createAzure } from '@ai-sdk/azure'
 import { createOpenAI } from '@ai-sdk/openai'
 import { APICallError, generateObject, generateText, jsonSchema, type LanguageModel, NoObjectGeneratedError } from 'ai'
-import { DEFAULT_JUDGE_MODEL, type JudgeProvider, judgeModelProvider } from '#/lib/eval/models'
+import { DEFAULT_JUDGE_MODEL, type JudgeProvider, judgeModelProvider } from '#/features/evaluation/logic/models'
 import type { JsonValue } from '#/lib/json'
 import { estimateCostUsd } from '#/lib/spans/llm-pricing'
 
 const JUDGE_TIMEOUT_MS = 60_000
 
-export type { JudgeProvider }
 export type JudgeDefaults = {
   model: string
   provider: JudgeProvider
@@ -45,7 +44,7 @@ function modelFor(model: string): LanguageModel {
   if (provider === 'anthropic') {
     const apiKey = process.env.ANTHROPIC_API_KEY
     if (!apiKey) throw new Error('Set ANTHROPIC_API_KEY to use a Claude judge model.')
-    return createAnthropic({ apiKey })(model.replace(/^anthropic\//i, ''))
+    return createAnthropic({ apiKey })(model)
   }
   if (provider === 'azure') {
     const apiKey = process.env.AZURE_OPENAI_API_KEY
@@ -99,7 +98,7 @@ const DATA_TYPE_INSTRUCTION: Record<string, string> = {
   text: 'Respond with a JSON object {"label": "<short verdict>", "explanation": "..."}.',
 }
 
-export function buildJudgeMessages(opts: {
+function buildJudgeMessages(opts: {
   judgePrompt: string | null
   dataType: string
   categories?: string[] | null

@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 import { Link, useRouterState } from '@tanstack/react-router'
-import { ChevronRight, Ellipsis, EllipsisVertical, Keyboard, LogOut, Moon, Sun } from 'lucide-react'
+import { ChevronRight, Ellipsis, EllipsisVertical, Keyboard, Moon, Sun } from 'lucide-react'
 import { useTheme } from 'next-themes'
 import { Fragment, useRef, useState } from 'react'
 import type { AnimatedIconHandle } from '#/components/icons/animated-icon'
@@ -39,8 +39,8 @@ import {
 } from '#/components/ui/sidebar'
 import { useChangelogUnseen } from '#/hooks/use-changelog-unseen'
 import { useUser, useUserId } from '#/hooks/use-user'
+import { currentUserSessionsQuery } from '#/lib/session-queries'
 import { DEFAULT } from '#/lib/time-range'
-import { currentUserSessionsQuery } from '#/routes/sessions/-data'
 
 const APP_VERSION = `v${__APP_VERSION__}`
 
@@ -305,13 +305,6 @@ function NavUser() {
                 Keyboard shortcuts
               </DropdownMenuItem>
             </DropdownMenuGroup>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem asChild>
-              <a href="/login">
-                <LogOut />
-                Sign out
-              </a>
-            </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
       </SidebarMenuItem>

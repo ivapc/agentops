@@ -2,13 +2,13 @@ import { createServerFn } from '@tanstack/react-start'
 import { asc, eq, inArray, sql } from 'drizzle-orm'
 import { db } from '#/db'
 import { datasetExamples, datasetRunItems, datasetRuns, evalDefinitions, scoreConfigs, scores } from '#/db/schema'
+import type { ExampleInput } from '#/features/evaluation/dataset-types'
+import type { ToolCall } from '#/features/evaluation/logic/span-eval-snapshot'
 import { type ConfigHint, scorePassFail } from '#/lib/eval/evaluation'
-import type { ToolCall } from '#/lib/eval/span-eval-snapshot'
 import type { JsonValue } from '#/lib/json'
-import type { ExampleInput } from '#/routes/datasets/-types'
 import { toolCallsFromTrace } from './eval-jobs'
 import { MAX_JUDGE_SAMPLES, resolveJudgeDefaults, runJudgeSamples } from './judge'
-import { configToHint } from './scores'
+import { scaleMap } from './scores'
 
 const DEFAULT_DATASET_JUDGE_PROMPT =
   'You are grading an agent answer. Given the question and (if present) the expected answer, decide whether the answer is correct. 1 = correct, 0 = incorrect.'
@@ -63,7 +63,7 @@ export const judgeDatasetRun = createServerFn({ method: 'POST' })
 
     const [cfg] = await db.select().from(scoreConfigs).where(eq(scoreConfigs.name, dimension)).limit(1)
     const categories = (cfg?.categories ?? null) as string[] | null
-    const scale: ConfigHint | undefined = cfg ? configToHint(cfg) : undefined
+    const scale: ConfigHint | undefined = cfg ? scaleMap([cfg]).get(dimension) : undefined
 
     const [run] = await db.select().from(datasetRuns).where(eq(datasetRuns.id, data.runId)).limit(1)
     if (!run) throw new Error('judgeDatasetRun: run not found')
