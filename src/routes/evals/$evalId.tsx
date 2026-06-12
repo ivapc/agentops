@@ -1,26 +1,19 @@
-import {
-  ArrowLeft01Icon,
-  Delete02Icon,
-  PauseIcon,
-  PencilEdit02Icon,
-  PlayIcon,
-  StarIcon,
-  TestTubeIcon,
-} from '@hugeicons/core-free-icons'
-import { HugeiconsIcon } from '@hugeicons/react'
 import { queryOptions, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { createFileRoute, Link, useNavigate } from '@tanstack/react-router'
+import { ChevronLeft, Pause, PencilLine, Play, Star, TestTube, Trash2 } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { toast } from 'sonner'
 import { Markdown } from '#/components/markdown'
 import { Page } from '#/components/page'
 import { PageBreadcrumb } from '#/components/page-breadcrumb'
 import { RelativeTime } from '#/components/relative-time'
+import { StatusDot } from '#/components/status-dot'
 import { Badge } from '#/components/ui/badge'
 import { Button } from '#/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '#/components/ui/card'
 import {
   Dialog,
+  DialogClose,
   DialogContent,
   DialogDescription,
   DialogFooter,
@@ -67,6 +60,7 @@ import {
 } from '#/lib/eval/evaluation'
 import { errMessage, formatCost } from '#/lib/format'
 import { queryKeys, STALE_LIVE_MS, STALE_TELEMETRY_MS } from '#/lib/query-keys'
+import { ACCENT } from '#/lib/tone'
 import { cn } from '#/lib/utils'
 
 const evalQuery = (id: number) =>
@@ -123,14 +117,14 @@ function EvalDetailPage() {
           <Empty>
             <EmptyHeader>
               <EmptyMedia variant="icon">
-                <HugeiconsIcon icon={TestTubeIcon} />
+                <TestTube />
               </EmptyMedia>
               <EmptyTitle>Evaluator not found</EmptyTitle>
               <EmptyDescription>This evaluator may have been deleted.</EmptyDescription>
             </EmptyHeader>
             <Button asChild variant="outline" size="sm">
               <Link to="/evals">
-                <HugeiconsIcon icon={ArrowLeft01Icon} strokeWidth={2} data-icon="inline-start" />
+                <ChevronLeft data-icon="inline-start" />
                 Back to evals
               </Link>
             </Button>
@@ -195,12 +189,13 @@ function EvalDetailLoaded({ definition, runs }: { definition: EvalDefinition; ru
           <div className="flex flex-col gap-1">
             <h1 className="text-lg font-semibold">{definition.name}</h1>
             <Badge variant={live ? 'success' : 'outline'} className={cn(!live && 'text-muted-foreground')}>
+              {live && <StatusDot pulse />}
               {live ? 'Live' : 'Library'}
             </Badge>
           </div>
           <div className="flex items-center gap-2">
             <Button variant="outline" size="sm" onClick={() => setEditOpen(true)}>
-              <HugeiconsIcon icon={PencilEdit02Icon} strokeWidth={2} data-icon="inline-start" />
+              <PencilLine data-icon="inline-start" />
               Edit
             </Button>
             <Button
@@ -209,11 +204,11 @@ function EvalDetailLoaded({ definition, runs }: { definition: EvalDefinition; ru
               disabled={liveMutation.isPending}
               onClick={() => liveMutation.mutate(!live)}
             >
-              <HugeiconsIcon icon={live ? PauseIcon : PlayIcon} strokeWidth={2} data-icon="inline-start" />
+              {live ? <Pause data-icon="inline-start" /> : <Play data-icon="inline-start" />}
               {live ? 'Move to library' : 'Go live'}
             </Button>
             <Button variant="outline" size="sm" onClick={() => setDeleteOpen(true)}>
-              <HugeiconsIcon icon={Delete02Icon} strokeWidth={2} data-icon="inline-start" />
+              <Trash2 data-icon="inline-start" />
               Delete
             </Button>
           </div>
@@ -277,9 +272,9 @@ function EvalDetailLoaded({ definition, runs }: { definition: EvalDefinition; ru
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setDeleteOpen(false)}>
-              Cancel
-            </Button>
+            <DialogClose asChild>
+              <Button variant="outline">Cancel</Button>
+            </DialogClose>
             <Button variant="destructive" disabled={deleteMutation.isPending} onClick={() => deleteMutation.mutate()}>
               {deleteMutation.isPending ? 'Deleting…' : 'Delete'}
             </Button>
@@ -318,7 +313,7 @@ function MetaGrid({ definition }: { definition: EvalDefinition }) {
       </MetaItem>
       {definition.mode === 'online' && <MetaItem label="Watches">{describeLiveFilter(definition.liveFilter)}</MetaItem>}
       <MetaItem label="Model">
-        <span className="font-mono text-xs">{definition.model || '—'}</span>
+        <span className={`font-mono text-xs ${ACCENT.violet.ident}`}>{definition.model || '—'}</span>
       </MetaItem>
     </div>
   )
@@ -387,10 +382,11 @@ function RunsTable({
                 </TableCell>
                 <TableCell>
                   <Badge variant={EVAL_RUN_STATUS_BADGE[run.status]} className="capitalize">
+                    {isEvalRunActive(run.status) && <StatusDot pulse />}
                     {run.status}
                   </Badge>
                 </TableCell>
-                <TableCell className="text-right tabular-nums text-emerald-600 dark:text-emerald-400">
+                <TableCell className={`text-right tabular-nums ${ACCENT.emerald.status}`}>
                   {summary?.pass ?? '—'}
                 </TableCell>
                 <TableCell className="text-right tabular-nums text-destructive">{summary?.fail ?? '—'}</TableCell>
@@ -411,9 +407,7 @@ function RunsTable({
                     title={run.blessed ? 'Blessed — click to unbless' : 'Bless run'}
                     onClick={() => onToggleBless(run.id, !run.blessed)}
                   >
-                    <HugeiconsIcon
-                      icon={StarIcon}
-                      strokeWidth={2}
+                    <Star
                       className={cn('size-4', run.blessed ? 'fill-amber-400 text-amber-500' : 'text-muted-foreground')}
                     />
                   </Button>
@@ -537,7 +531,7 @@ function CompareSection({ baselineRunId, runs }: { baselineRunId: number; runs: 
         <span className="font-mono text-xs text-muted-foreground">baseline #{base}</span>
         <span className="text-xs text-muted-foreground">→</span>
         <Select value={effectiveHead != null ? String(effectiveHead) : ''} onValueChange={(v) => setHead(Number(v))}>
-          <SelectTrigger size="sm" className="w-40">
+          <SelectTrigger size="sm" className="w-40 text-xs">
             <SelectValue placeholder="Pick head run" />
           </SelectTrigger>
           <SelectContent>
@@ -617,7 +611,7 @@ function CompareTable({ rows }: { rows: EvalCompareRow[] }) {
                   row.baseTotal > 0 && row.headTotal > 0 && row.headPassRate < row.basePassRate
                     ? 'text-destructive'
                     : row.baseTotal > 0 && row.headTotal > 0 && row.headPassRate > row.basePassRate
-                      ? 'text-emerald-600 dark:text-emerald-400'
+                      ? ACCENT.emerald.status
                       : '',
                 )}
               >
@@ -634,7 +628,7 @@ function CompareTable({ rows }: { rows: EvalCompareRow[] }) {
               <TableCell
                 className={cn(
                   'text-right tabular-nums',
-                  row.flippedToPass > 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-muted-foreground',
+                  row.flippedToPass > 0 ? ACCENT.emerald.status : 'text-muted-foreground',
                 )}
               >
                 {row.flippedToPass}
@@ -737,13 +731,19 @@ function EditDialog({
         >
           <div className="flex flex-col gap-1.5">
             <Label htmlFor="eval-name">Name</Label>
-            <Input id="eval-name" value={name} onChange={(e) => setName(e.target.value)} autoFocus />
+            <Input
+              id="eval-name"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              className="text-xs"
+              autoFocus
+            />
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="eval-scope">Scope</Label>
               <Select value={scope} onValueChange={(v) => setScope(v as EvalScope)}>
-                <SelectTrigger id="eval-scope">
+                <SelectTrigger id="eval-scope" className="text-xs">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -758,7 +758,7 @@ function EditDialog({
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="eval-datatype">Data type</Label>
               <Select value={dataType} onValueChange={(v) => setDataType(v as ScoreDataType)}>
-                <SelectTrigger id="eval-datatype">
+                <SelectTrigger id="eval-datatype" className="text-xs">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -775,7 +775,7 @@ function EditDialog({
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="eval-source">Source</Label>
               <Select value={source} onValueChange={(v) => setSource(v as EvalSourceKind)}>
-                <SelectTrigger id="eval-source">
+                <SelectTrigger id="eval-source" className="text-xs">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -795,7 +795,7 @@ function EditDialog({
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="eval-mode">State</Label>
               <Select value={mode} onValueChange={(v) => setMode(v as EvalMode)}>
-                <SelectTrigger id="eval-mode">
+                <SelectTrigger id="eval-mode" className="text-xs">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -818,6 +818,7 @@ function EditDialog({
                     value={filter.serviceName}
                     onChange={(e) => setFilter((f) => ({ ...f, serviceName: e.target.value }))}
                     placeholder="any"
+                    className="text-xs"
                   />
                 </div>
                 <div className="flex flex-col gap-1.5">
@@ -827,6 +828,7 @@ function EditDialog({
                     value={filter.agentName}
                     onChange={(e) => setFilter((f) => ({ ...f, agentName: e.target.value }))}
                     placeholder="any"
+                    className="text-xs"
                   />
                 </div>
                 <div className="flex flex-col gap-1.5">
@@ -837,7 +839,7 @@ function EditDialog({
                     onChange={(e) => setFilter((f) => ({ ...f, sampleRate: e.target.value }))}
                     placeholder="1"
                     inputMode="decimal"
-                    className="tabular-nums"
+                    className="text-xs tabular-nums"
                   />
                 </div>
               </div>
@@ -852,14 +854,16 @@ function EditDialog({
                 onChange={(e) => setJudgePrompt(e.target.value)}
                 rows={6}
                 placeholder="Score the response for correctness…"
-                className="font-mono text-xs"
+                className="text-xs"
               />
             </div>
           )}
           <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
-              Cancel
-            </Button>
+            <DialogClose asChild>
+              <Button type="button" variant="outline">
+                Cancel
+              </Button>
+            </DialogClose>
             <Button type="submit" disabled={!canSubmit}>
               {mutation.isPending ? 'Saving…' : 'Save'}
             </Button>

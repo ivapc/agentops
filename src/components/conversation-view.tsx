@@ -1,6 +1,7 @@
-import { ArrowDownIcon, ChevronDownIcon, ChevronRightIcon, EyeIcon, EyeSlashIcon } from '@heroicons/react/16/solid'
+import { ArrowDown, ChevronDown, ChevronRight, Eye, EyeOff } from 'lucide-react'
 import { useCallback, useMemo, useState } from 'react'
 import { StickToBottom, useStickToBottomContext } from 'use-stick-to-bottom'
+import { JsonView } from '#/components/ai-elements/json-view'
 import { CopyButton } from '#/components/copy-button'
 import { Markdown } from '#/components/markdown'
 import { ScaffoldGroup } from '#/components/scaffold-group'
@@ -9,7 +10,7 @@ import type { ConversationEvent, InspectorView } from '#/features/inspect'
 import { groupScaffolding, type RenderItem } from '#/lib/agui-scaffolding'
 import { formatTime, formatTokens, metricTone, tokensFromChars } from '#/lib/format'
 import { prettyJson } from '#/lib/json'
-import { toolTone } from '#/lib/tools'
+import { ACCENT, toolTone } from '#/lib/tone'
 
 interface ConversationViewProps {
   view: InspectorView
@@ -161,7 +162,10 @@ function TurnView({
         (turn.orchestratorSpanId ? (
           <div className="flex flex-col gap-3 border-l-2 border-border/40 pl-3">
             {showHeader && turn.label && (
-              <div className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+              <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                <span className="gradient-text font-bold" aria-hidden>
+                  ✦
+                </span>
                 {turn.label}
               </div>
             )}
@@ -188,6 +192,7 @@ function renderItems(items: RenderItem[], ctx: EventContext) {
 }
 
 function ShowAllToggle({ showAll, onToggle }: { showAll: boolean; onToggle: () => void }) {
+  const Icon = showAll ? EyeOff : Eye
   return (
     <button
       type="button"
@@ -195,7 +200,7 @@ function ShowAllToggle({ showAll, onToggle }: { showAll: boolean; onToggle: () =
       title={showAll ? 'Hide AG-UI scaffolding' : 'Show all messages including scaffolding'}
       className="absolute right-3 top-3 z-10 inline-flex items-center gap-1.5 rounded-md border bg-background/90 px-2 py-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground shadow-sm hover:bg-accent hover:text-foreground"
     >
-      {showAll ? <EyeSlashIcon className="size-3" /> : <EyeIcon className="size-3" />}
+      <Icon className="size-3" aria-hidden />
       {showAll ? 'Hide scaffolding' : 'Show all'}
     </button>
   )
@@ -216,7 +221,7 @@ function ConversationScrollButton() {
       onClick={handleScrollToBottom}
       className="absolute bottom-4 left-[50%] z-10 inline-flex size-9 translate-x-[-50%] items-center justify-center rounded-full border bg-background text-foreground shadow-md hover:bg-accent"
     >
-      <ArrowDownIcon className="size-4 fill-current" />
+      <ArrowDown className="size-4 fill-current" aria-hidden />
     </button>
   )
 }
@@ -338,24 +343,27 @@ function ToolCard({ call, result, expanded, onToggle, selected, onSelect }: Tool
   const tone = toolTone('tool')
 
   return (
-    <div className={['rounded-md border text-sm', selected ? tone.selectedBorder : tone.border].join(' ')}>
+    <div className={['rounded-lg border text-sm', selected ? tone.selectedBorder : tone.border].join(' ')}>
       <button
         type="button"
         onClick={() => {
           onToggle()
           onSelect()
         }}
-        className={`flex w-full items-center gap-2 rounded-md px-3 py-1.5 text-left ${tone.hoverBg}`}
+        className={`flex w-full items-center gap-2 rounded-lg px-3 py-1.5 text-left ${tone.hoverBg}`}
       >
-        <span className={`rounded px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider ${tone.badge}`}>
-          tool
+        <span
+          className={`inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium ${tone.badge}`}
+        >
+          <tone.icon className="size-3" />
+          {tone.label}
         </span>
-        <span className="truncate font-medium text-foreground">{call.toolName}</span>
+        <span className={`truncate font-mono text-xs font-medium ${ACCENT.violet.ident}`}>{call.toolName}</span>
         <StatusPill status={status} />
         <span className="ml-auto flex shrink-0 items-center gap-2 text-[11px] text-muted-foreground">
           <ToolTokenBadge input={argumentTokens} output={resultTokens} />
           <span>{formatTime(call.timestamp)}</span>
-          {expanded ? <ChevronDownIcon className="size-3" /> : <ChevronRightIcon className="size-3" />}
+          {expanded ? <ChevronDown className="size-3" aria-hidden /> : <ChevronRight className="size-3" aria-hidden />}
         </span>
       </button>
 
@@ -408,19 +416,22 @@ function AgentCard({ event, nested, expanded, onToggle, selected, onSelect, ctx 
   const tone = toolTone('agent')
 
   return (
-    <div className={['rounded-md border text-sm', selected ? tone.selectedBorder : tone.border].join(' ')}>
+    <div className={['rounded-lg border text-sm', selected ? tone.selectedBorder : tone.border].join(' ')}>
       <button
         type="button"
         onClick={() => {
           onToggle()
           onSelect()
         }}
-        className={`flex w-full items-center gap-2 rounded-md px-3 py-1.5 text-left ${tone.hoverBg}`}
+        className={`flex w-full items-center gap-2 rounded-lg px-3 py-1.5 text-left ${tone.hoverBg}`}
       >
-        <span className={`rounded px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider ${tone.badge}`}>
-          agent
+        <span
+          className={`inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium ${tone.badge}`}
+        >
+          <tone.icon className="size-3" />
+          {tone.label}
         </span>
-        <span className="truncate font-medium text-foreground">
+        <span className={`truncate font-mono text-xs font-medium ${ACCENT.emerald.ident}`}>
           {ctx.agentLabels.get(event.spanId) ?? event.agentName}
         </span>
         {hasActions && (
@@ -431,7 +442,7 @@ function AgentCard({ event, nested, expanded, onToggle, selected, onSelect, ctx 
         <span className="ml-auto flex shrink-0 items-center gap-2 text-[11px] text-muted-foreground">
           <ToolTokenBadge input={inputTokens} output={outputTokens} />
           <span>{formatTime(event.timestamp)}</span>
-          {expanded ? <ChevronDownIcon className="size-3" /> : <ChevronRightIcon className="size-3" />}
+          {expanded ? <ChevronDown className="size-3" aria-hidden /> : <ChevronRight className="size-3" aria-hidden />}
         </span>
       </button>
 
@@ -465,9 +476,7 @@ function KeyValueBlock({ label, value }: { label: string; value: unknown }) {
         <div className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">{label}</div>
         <CopyButton value={formatted} className="opacity-0 transition-opacity group-hover/kv:opacity-100" />
       </div>
-      <pre className="max-h-72 overflow-y-auto whitespace-pre-wrap break-words rounded bg-muted px-2 py-1.5 font-mono text-xs text-foreground">
-        {formatted}
-      </pre>
+      <JsonView value={value} className="max-h-72" />
     </div>
   )
 }

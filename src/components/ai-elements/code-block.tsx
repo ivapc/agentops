@@ -1,15 +1,16 @@
 import { useMemo } from 'react'
+import { ACCENT } from '#/lib/tone'
 import { cn } from '#/lib/utils'
 
 // Strings (with escapes) optionally followed by `:` for object keys, then
 // literals (true/false/null) and numbers. Anything not matched stays plain.
 const TOKEN_RE = /("(?:\\.|[^"\\])*")(\s*:)?|\b(true|false|null)\b|(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)/g
 
-const TOKEN_CLS = {
-  key: 'text-sky-700 dark:text-sky-300',
-  string: 'text-emerald-700 dark:text-emerald-300',
-  literal: 'text-purple-700 dark:text-purple-300',
-  number: 'text-amber-700 dark:text-amber-400',
+export const TOKEN_CLS = {
+  key: ACCENT.violet.ident,
+  string: ACCENT.emerald.ident,
+  literal: ACCENT.pink.ident,
+  number: ACCENT.cyan.ident,
 } as const
 
 type Token = { text: string; cls?: string }

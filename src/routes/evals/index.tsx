@@ -1,15 +1,16 @@
-import { Add01Icon, TestTubeIcon } from '@hugeicons/core-free-icons'
-import { HugeiconsIcon } from '@hugeicons/react'
 import { queryOptions, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { createFileRoute, Link } from '@tanstack/react-router'
+import { Plus, TestTube } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
 import { Page } from '#/components/page'
 import { RelativeTime } from '#/components/relative-time'
+import { StatusDot } from '#/components/status-dot'
 import { Button } from '#/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '#/components/ui/card'
 import {
   Dialog,
+  DialogClose,
   DialogContent,
   DialogDescription,
   DialogFooter,
@@ -56,6 +57,7 @@ import {
 import { JUDGE_TEMPLATES } from '#/lib/eval/judge-templates'
 import { errMessage, formatCost } from '#/lib/format'
 import { queryKeys, STALE_LIVE_MS, STALE_TELEMETRY_MS } from '#/lib/query-keys'
+import { ACCENT } from '#/lib/tone'
 import { cn } from '#/lib/utils'
 
 const definitionsQuery = queryOptions({
@@ -148,7 +150,7 @@ function EvalsPage() {
           defaultModel={judgeDefaults?.model ?? ''}
           trigger={
             <Button size="sm">
-              <HugeiconsIcon icon={Add01Icon} strokeWidth={2} data-icon="inline-start" />
+              <Plus data-icon="inline-start" />
               Set up evaluator
             </Button>
           }
@@ -265,13 +267,16 @@ function EvaluatorsTable({
                 >
                   <TableCell className="py-2.5">
                     <div className="flex flex-col gap-0.5">
-                      <Link
-                        to="/evals/$evalId"
-                        params={{ evalId: String(def.id) }}
-                        className="font-medium text-foreground hover:underline"
-                      >
-                        {def.name}
-                      </Link>
+                      <div className="flex items-center gap-1.5">
+                        <Link
+                          to="/evals/$evalId"
+                          params={{ evalId: String(def.id) }}
+                          className="font-medium text-foreground hover:underline"
+                        >
+                          {def.name}
+                        </Link>
+                        {isLive(def) && <StatusDot pulse className="text-success" />}
+                      </div>
                       <span className="text-xs capitalize text-muted-foreground">
                         {def.scope} · {DATA_TYPE_LABEL[def.dataType]}
                       </span>
@@ -287,7 +292,7 @@ function EvaluatorsTable({
                     {stat?.costUsd ? formatCost(stat.costUsd) : '—'}
                   </TableCell>
                   <TableCell>
-                    <span className="font-mono text-xs text-foreground">{def.model || '—'}</span>
+                    <span className={`font-mono text-xs ${ACCENT.violet.ident}`}>{def.model || '—'}</span>
                   </TableCell>
                   <TableCell className="text-muted-foreground">
                     <RelativeTime ts={def.updatedAt} />
@@ -339,7 +344,7 @@ function JudgeStatus({ judge }: { judge: JudgeDefaults }) {
   ].filter(Boolean) as string[]
   return (
     <p className="text-xs text-muted-foreground">
-      Judge: <span className="font-mono text-foreground">{judge.model}</span>
+      Judge: <span className={`font-mono ${ACCENT.violet.ident}`}>{judge.model}</span>
       {keys.length > 0 && <> · {keys.join(', ')} ready</>}
     </p>
   )
@@ -373,13 +378,13 @@ function EvaluatorsEmpty({ onSetup }: { onSetup: () => void }) {
     <Empty>
       <EmptyHeader>
         <EmptyMedia variant="icon">
-          <HugeiconsIcon icon={TestTubeIcon} />
+          <TestTube />
         </EmptyMedia>
         <EmptyTitle>No evaluators yet</EmptyTitle>
         <EmptyDescription>Set up an LLM-judge or code evaluator to start scoring your traces.</EmptyDescription>
       </EmptyHeader>
       <Button size="sm" onClick={onSetup}>
-        <HugeiconsIcon icon={Add01Icon} strokeWidth={2} data-icon="inline-start" />
+        <Plus data-icon="inline-start" />
         Set up evaluator
       </Button>
     </Empty>
@@ -477,8 +482,8 @@ function SetupEvaluatorDialog({
           <div className="flex flex-col gap-1.5">
             <Label htmlFor="evaluator-template">Start from a template</Label>
             <Select onValueChange={applyTemplate}>
-              <SelectTrigger id="evaluator-template">
-                <SelectValue placeholder="Optional — prefill from a known judge" />
+              <SelectTrigger id="evaluator-template" className="text-xs">
+                <SelectValue placeholder="Prefill from a template…" />
               </SelectTrigger>
               <SelectContent>
                 {JUDGE_TEMPLATES.map((t) => (
@@ -497,6 +502,7 @@ function SetupEvaluatorDialog({
               value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder="e.g. helpfulness"
+              className="text-xs"
               autoFocus
             />
           </div>
@@ -522,7 +528,7 @@ function SetupEvaluatorDialog({
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="evaluator-data-type">Data type</Label>
               <Select value={dataType} onValueChange={(v) => setDataType(v as ScoreDataType)}>
-                <SelectTrigger id="evaluator-data-type">
+                <SelectTrigger id="evaluator-data-type" className="text-xs">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -547,15 +553,18 @@ function SetupEvaluatorDialog({
               id="evaluator-judge-prompt"
               value={judgePrompt}
               onChange={(e) => setJudgePrompt(e.target.value)}
-              placeholder="Instructions for the judge. Reference the target's fields and the expected output."
+              placeholder="Instructions for the judge…"
               rows={5}
+              className="text-xs"
             />
           </div>
 
           <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
-              Cancel
-            </Button>
+            <DialogClose asChild>
+              <Button type="button" variant="outline">
+                Cancel
+              </Button>
+            </DialogClose>
             <Button type="submit" disabled={!canSubmit}>
               {mutation.isPending ? 'Creating…' : 'Create evaluator'}
             </Button>

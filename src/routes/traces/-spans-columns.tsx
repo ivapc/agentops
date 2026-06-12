@@ -1,12 +1,13 @@
-import { Clock01Icon } from '@hugeicons/core-free-icons'
-import { HugeiconsIcon } from '@hugeicons/react'
 import { Link } from '@tanstack/react-router'
 import type { ColumnDef } from '@tanstack/react-table'
+import { Clock } from 'lucide-react'
 import { DataTableColumnHeader } from '#/components/data-table-column-header'
+import { KindBadge } from '#/components/kind-badge'
 import { RelativeTime } from '#/components/relative-time'
 import { Badge } from '#/components/ui/badge'
 import { formatCost, formatDuration, formatTokens, metricTone, truncateId } from '#/lib/format'
 import type { SpanSummary } from '#/lib/telemetry'
+import { ACCENT } from '#/lib/tone'
 
 export const spanColumns: ColumnDef<SpanSummary>[] = [
   {
@@ -50,11 +51,7 @@ export const spanColumns: ColumnDef<SpanSummary>[] = [
   {
     accessorKey: 'kind',
     header: ({ column }) => <DataTableColumnHeader column={column} title="Kind" />,
-    cell: ({ row }) => (
-      <Badge variant="outline" className="px-1.5 capitalize text-muted-foreground">
-        {row.original.kind}
-      </Badge>
-    ),
+    cell: ({ row }) => <KindBadge kind={row.original.kind} />,
     filterFn: (row, _id, value: string[]) => {
       if (!Array.isArray(value) || value.length === 0) return true
       return value.includes(row.original.kind)
@@ -66,9 +63,12 @@ export const spanColumns: ColumnDef<SpanSummary>[] = [
     header: ({ column }) => <DataTableColumnHeader column={column} title="Label" />,
     cell: ({ row }) =>
       row.original.label ? (
-        <Badge variant="outline" className="whitespace-nowrap font-mono text-[10px]" title={row.original.label}>
+        <span
+          className="whitespace-nowrap rounded bg-muted px-1.5 py-0.5 font-mono text-[10px] font-medium text-muted-foreground"
+          title={row.original.label}
+        >
           {row.original.label}
-        </Badge>
+        </span>
       ) : (
         <span className="text-muted-foreground/60">—</span>
       ),
@@ -80,7 +80,7 @@ export const spanColumns: ColumnDef<SpanSummary>[] = [
     cell: ({ row }) => {
       const m = row.original.modelId
       return m ? (
-        <span className="font-mono text-[11px]">{m}</span>
+        <span className={`font-mono text-[11px] ${ACCENT.violet.ident}`}>{m}</span>
       ) : (
         <span className="text-muted-foreground/60">—</span>
       )
@@ -90,7 +90,11 @@ export const spanColumns: ColumnDef<SpanSummary>[] = [
   {
     accessorKey: 'totalTokens',
     header: ({ column }) => <DataTableColumnHeader column={column} title="Tokens" className="justify-end" />,
-    cell: ({ row }) => <div className="text-right tabular-nums">{formatTokens(row.original.totalTokens)}</div>,
+    cell: ({ row }) => (
+      <div className={`text-right tabular-nums ${metricTone('tokens', row.original.totalTokens)}`}>
+        {formatTokens(row.original.totalTokens)}
+      </div>
+    ),
   },
   {
     accessorKey: 'totalCostUsd',
@@ -108,7 +112,7 @@ export const spanColumns: ColumnDef<SpanSummary>[] = [
       const ms = row.original.durationMs
       return (
         <div className={`flex items-center justify-end gap-1 tabular-nums ${metricTone('duration', ms)}`}>
-          <HugeiconsIcon icon={Clock01Icon} strokeWidth={2} className="size-3.5 opacity-80" />
+          <Clock className="size-3.5 opacity-80" />
           {formatDuration(ms)}
         </div>
       )

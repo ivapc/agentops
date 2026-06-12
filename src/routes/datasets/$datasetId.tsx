@@ -1,28 +1,37 @@
-import {
-  Add01Icon,
-  Alert02Icon,
-  AlertCircleIcon,
-  ChatQuestion01Icon,
-  CheckmarkCircle02Icon,
-  Delete02Icon,
-  Download01Icon,
-  Link01Icon,
-  PlayCircleIcon,
-  SlidersHorizontalIcon,
-} from '@hugeicons/core-free-icons'
-import { HugeiconsIcon } from '@hugeicons/react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { createFileRoute, Link } from '@tanstack/react-router'
 import type { ColumnDef } from '@tanstack/react-table'
+import {
+  CircleAlert,
+  CircleCheck,
+  CirclePlay,
+  Download,
+  Link as LinkIcon,
+  MessageCircleQuestion,
+  Plus,
+  SlidersHorizontal,
+  Trash2,
+  TriangleAlert,
+} from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
 import { Page } from '#/components/page'
 import { PageBreadcrumb } from '#/components/page-breadcrumb'
 import { Badge } from '#/components/ui/badge'
 import { Button } from '#/components/ui/button'
+import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '#/components/ui/dialog'
 import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '#/components/ui/empty'
 import { Input } from '#/components/ui/input'
 import { Label } from '#/components/ui/label'
+import { ScrollArea } from '#/components/ui/scroll-area'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '#/components/ui/select'
 import {
   Sheet,
@@ -37,6 +46,7 @@ import { Skeleton } from '#/components/ui/skeleton'
 import { Switch } from '#/components/ui/switch'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '#/components/ui/tabs'
 import { Textarea } from '#/components/ui/textarea'
+import { ToggleGroup, ToggleGroupItem } from '#/components/ui/toggle-group'
 import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip'
 import { judgeDatasetRun } from '#/features/evaluation/server/dataset-judge'
 import { deleteExamples, runDataset, updateDataset, upsertExample } from '#/features/evaluation/server/datasets'
@@ -45,6 +55,7 @@ import type { EvalDefinition } from '#/lib/eval/evaluation'
 import { errMessage } from '#/lib/format'
 import { looksLikeJson as isJsonShape, parseJson } from '#/lib/json'
 import { queryKeys, STALE_TELEMETRY_MS } from '#/lib/query-keys'
+import { ACCENT } from '#/lib/tone'
 import { cn } from '#/lib/utils'
 import { DataGrid } from './-components/data-grid'
 import {
@@ -225,7 +236,7 @@ function DatasetDetailLoaded({ detail }: { detail: DatasetDetail }) {
           </div>
           <div className="ml-auto flex items-center gap-2">
             <Button variant="outline" size="sm" onClick={() => downloadCsv(dataset.name, examples)}>
-              <HugeiconsIcon icon={Download01Icon} strokeWidth={2} data-icon="inline-start" />
+              <Download data-icon="inline-start" />
               CSV
             </Button>
           </div>
@@ -290,7 +301,7 @@ function DatasetDetailLoaded({ detail }: { detail: DatasetDetail }) {
       </div>
 
       {(activeExample || creating) && (
-        <ExampleSheet
+        <ExampleDialog
           key={activeExample?.id ?? 'new'}
           datasetId={dataset.id}
           example={activeExample}
@@ -392,7 +403,7 @@ function ExamplesTab({
                   onRun(row.original)
                 }}
               >
-                <HugeiconsIcon icon={PlayCircleIcon} strokeWidth={2} />
+                <CirclePlay />
               </Button>
             </TooltipTrigger>
             <TooltipContent>Run just this example</TooltipContent>
@@ -412,7 +423,7 @@ function ExamplesTab({
             The questions. Edit input / expected / metadata here — that's what every run is graded against.
           </p>
           <Button size="sm" variant="outline" onClick={onAdd}>
-            <HugeiconsIcon icon={Add01Icon} strokeWidth={2} data-icon="inline-start" />
+            <Plus data-icon="inline-start" />
             Example
           </Button>
         </div>
@@ -422,14 +433,14 @@ function ExamplesTab({
           <Empty>
             <EmptyHeader>
               <EmptyMedia variant="icon">
-                <HugeiconsIcon icon={ChatQuestion01Icon} strokeWidth={2} />
+                <MessageCircleQuestion />
               </EmptyMedia>
               <EmptyTitle>No examples yet</EmptyTitle>
               <EmptyDescription>Add a question by hand, or capture one from a trace.</EmptyDescription>
             </EmptyHeader>
             <EmptyContent>
               <Button size="sm" onClick={onAdd}>
-                <HugeiconsIcon icon={Add01Icon} strokeWidth={2} data-icon="inline-start" />
+                <Plus data-icon="inline-start" />
                 Add example
               </Button>
             </EmptyContent>
@@ -510,7 +521,7 @@ function RunsTab({
           className="h-8 max-w-sm font-mono text-xs"
         />
         <Button variant="outline" size="sm" onClick={() => setOverridesOpen(true)}>
-          <HugeiconsIcon icon={SlidersHorizontalIcon} strokeWidth={2} data-icon="inline-start" />
+          <SlidersHorizontal data-icon="inline-start" />
           Overrides
           {overrideCount > 0 && (
             <Badge variant="secondary" className="ml-1 font-mono text-[10px]">
@@ -519,7 +530,7 @@ function RunsTab({
           )}
         </Button>
         <Select value={judgeDefId} onValueChange={onJudgeDefChange}>
-          <SelectTrigger size="sm" className="w-44" aria-label="Judge">
+          <SelectTrigger size="sm" className="w-44 text-xs" aria-label="Judge">
             <SelectValue placeholder="Default correctness" />
           </SelectTrigger>
           <SelectContent>
@@ -568,12 +579,12 @@ function RunsTab({
           <TooltipContent>Judge automatically after each run</TooltipContent>
         </Tooltip>
         <Button className="ml-auto" size="sm" onClick={onRun} disabled={running || examples.length === 0}>
-          <HugeiconsIcon icon={PlayCircleIcon} strokeWidth={2} data-icon="inline-start" />
+          <CirclePlay data-icon="inline-start" />
           {running ? 'Running…' : 'Run on all'}
         </Button>
       </div>
 
-      <AgentOverridesDrawer
+      <AgentOverridesDialog
         open={overridesOpen}
         onClose={() => setOverridesOpen(false)}
         overrides={overrides}
@@ -585,7 +596,7 @@ function RunsTab({
           <Empty>
             <EmptyHeader>
               <EmptyMedia variant="icon">
-                <HugeiconsIcon icon={PlayCircleIcon} strokeWidth={2} />
+                <CirclePlay />
               </EmptyMedia>
               <EmptyTitle>No runs yet</EmptyTitle>
               <EmptyDescription>Point at your agent and hit “Run on all” to fire every question.</EmptyDescription>
@@ -678,7 +689,7 @@ function ScoreChip({ s }: { s: ItemScore }) {
       title={s.explanation ?? undefined}
       className={cn(
         'gap-1 font-normal',
-        s.pass === true && 'border-emerald-600/40 text-emerald-600',
+        s.pass === true && `border-emerald-600/40 ${ACCENT.emerald.status}`,
         s.pass === false && 'border-destructive/40 text-destructive',
         s.pass == null && 'text-muted-foreground',
       )}
@@ -841,19 +852,16 @@ function OutputCell({ it, onOpenItem }: { it: DatasetRunItem | null; onOpenItem:
         <StatusIcon status={it.status} />
         {it.status === 'changed' && <span className="text-warning">changed</span>}
         <span>· {(it.latencyMs / 1000).toFixed(1)}s</span>
-        {it.traceId && <HugeiconsIcon icon={Link01Icon} className="size-3" strokeWidth={2} />}
+        {it.traceId && <LinkIcon className="size-3" />}
       </span>
     </button>
   )
 }
 
 function StatusIcon({ status }: { status: RunItemStatus }) {
-  if (status === 'ok')
-    return <HugeiconsIcon icon={CheckmarkCircle02Icon} className="size-3.5 text-success" strokeWidth={2} />
-  if (status === 'changed')
-    return <HugeiconsIcon icon={Alert02Icon} className="size-3.5 text-warning" strokeWidth={2} />
-  if (status === 'error')
-    return <HugeiconsIcon icon={AlertCircleIcon} className="size-3.5 text-destructive" strokeWidth={2} />
+  if (status === 'ok') return <CircleCheck className="size-3.5 text-success" />
+  if (status === 'changed') return <TriangleAlert className="size-3.5 text-warning" />
+  if (status === 'error') return <CircleAlert className="size-3.5 text-destructive" />
   return <span className="inline-block size-2 rounded-full bg-muted-foreground/40" />
 }
 
@@ -864,7 +872,7 @@ const looksLikeJson = (s: string | null | undefined) => {
   return isJsonShape(t) && isValidJson(t)
 }
 
-function ExampleSheet({
+function ExampleDialog({
   datasetId,
   example,
   onClose,
@@ -922,100 +930,90 @@ function ExampleSheet({
   }
 
   return (
-    <Sheet open onOpenChange={(o) => !o && onClose()}>
-      <SheetContent className="flex w-full flex-col gap-0 data-[side=right]:w-[46rem] data-[side=right]:sm:max-w-[46rem]">
-        <SheetHeader>
-          <SheetTitle>{example ? 'Example' : 'New example'}</SheetTitle>
-          <SheetDescription>
+    <Dialog open onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="sm:max-w-3xl">
+        <DialogHeader>
+          <DialogTitle>{example ? 'Example' : 'New example'}</DialogTitle>
+          <DialogDescription>
             Edit the question and its expected answer. Filling Expected makes it golden.
-          </SheetDescription>
-        </SheetHeader>
-        <div className="flex flex-1 flex-col gap-4 overflow-auto px-4 py-2">
-          <Field label="Input">
-            <InputEditor input={input} onChange={setInput} onValidChange={setInputValid} />
-          </Field>
-          <Field label="Expected">
-            <div className="flex items-center gap-1">
-              <Button
-                type="button"
-                size="sm"
-                variant={expectedMode === 'text' ? 'secondary' : 'ghost'}
-                onClick={() => setExpectedMode('text')}
-              >
-                Text
-              </Button>
-              <Button
-                type="button"
-                size="sm"
-                variant={expectedMode === 'json' ? 'secondary' : 'ghost'}
-                onClick={switchToJson}
-              >
-                JSON
-              </Button>
-            </div>
-            <Textarea
-              value={expected}
-              onChange={(e) => setExpected(e.target.value)}
-              rows={expectedMode === 'json' ? 14 : 3}
-              className={cn(jsonInvalid && 'border-destructive', expectedMode === 'json' && 'font-mono text-xs')}
-              placeholder={
-                expectedMode === 'json'
-                  ? '{ "criterion": "mentions the 30-day window" }'
-                  : 'Reference answer, a tool-call assertion, or a judge rubric…'
-              }
-            />
-            {jsonInvalid ? (
-              <p className="text-[11px] text-destructive">Invalid JSON — fix it or switch to Text.</p>
-            ) : (
-              <p className="text-[11px] text-muted-foreground">
-                A criterion checked by the judge (not an exact string match). Text or JSON — both are passed to the
-                judge as the reference.
-              </p>
-            )}
-          </Field>
-          <Field label="Metadata">
-            <MetadataEditor pairs={metaPairs} onChange={setMetaPairs} />
-          </Field>
-          {example?.sourceTraceId && (
-            <Field label="Source">
-              <Link
-                to="/traces/$traceId"
-                params={{ traceId: example.sourceTraceId }}
-                className="inline-flex items-center gap-1 font-mono text-xs text-primary hover:underline"
-              >
-                trace {example.sourceTraceId}
-                <HugeiconsIcon icon={Link01Icon} className="size-3" strokeWidth={2} />
-              </Link>
+          </DialogDescription>
+        </DialogHeader>
+        <ScrollArea className="-mx-1 [&>[data-slot=scroll-area-viewport]]:max-h-[70vh]">
+          <div className="flex flex-col gap-4 px-1">
+            <Field label="Input">
+              <InputEditor input={input} onChange={setInput} onValidChange={setInputValid} />
             </Field>
-          )}
-        </div>
-        <SheetFooter>
-          <div className="flex items-center gap-2">
-            <Button
-              onClick={() => saveMutation.mutate()}
-              disabled={saveMutation.isPending || jsonInvalid || !inputValid}
-            >
-              Save
-            </Button>
-            <SheetClose asChild>
-              <Button variant="outline">Cancel</Button>
-            </SheetClose>
-            {example && (
-              <Button
-                variant="ghost"
-                size="icon"
-                aria-label="Delete example"
-                className="ml-auto text-muted-foreground hover:text-destructive"
-                disabled={deleteMutation.isPending}
-                onClick={() => deleteMutation.mutate()}
+            <Field label="Expected">
+              <ToggleGroup
+                type="single"
+                value={expectedMode}
+                onValueChange={(v) => {
+                  if (v === 'text') setExpectedMode('text')
+                  else if (v === 'json') switchToJson()
+                }}
+                variant="outline"
+                className="justify-start"
               >
-                <HugeiconsIcon icon={Delete02Icon} strokeWidth={2} />
-              </Button>
+                <ToggleGroupItem value="text">Text</ToggleGroupItem>
+                <ToggleGroupItem value="json">JSON</ToggleGroupItem>
+              </ToggleGroup>
+              <Textarea
+                value={expected}
+                onChange={(e) => setExpected(e.target.value)}
+                rows={expectedMode === 'json' ? 14 : 3}
+                className={cn(jsonInvalid && 'border-destructive', expectedMode === 'json' && 'font-mono text-xs')}
+                placeholder={
+                  expectedMode === 'json'
+                    ? '{ "criterion": "mentions the 30-day window" }'
+                    : 'Reference answer, a tool-call assertion, or a judge rubric…'
+                }
+              />
+              {jsonInvalid ? (
+                <p className="text-[11px] text-destructive">Invalid JSON — fix it or switch to Text.</p>
+              ) : (
+                <p className="text-[11px] text-muted-foreground">
+                  A criterion checked by the judge (not an exact string match). Text or JSON — both are passed to the
+                  judge as the reference.
+                </p>
+              )}
+            </Field>
+            <Field label="Metadata">
+              <MetadataEditor pairs={metaPairs} onChange={setMetaPairs} />
+            </Field>
+            {example?.sourceTraceId && (
+              <Field label="Source">
+                <Button asChild variant="link" size="sm" className="h-auto justify-start p-0 font-mono text-xs">
+                  <Link to="/traces/$traceId" params={{ traceId: example.sourceTraceId }}>
+                    trace {example.sourceTraceId}
+                    <LinkIcon className="size-3" />
+                  </Link>
+                </Button>
+              </Field>
             )}
           </div>
-        </SheetFooter>
-      </SheetContent>
-    </Sheet>
+        </ScrollArea>
+        <DialogFooter>
+          {example && (
+            <Button
+              variant="ghost"
+              size="icon"
+              aria-label="Delete example"
+              className="mr-auto text-muted-foreground hover:text-destructive"
+              disabled={deleteMutation.isPending}
+              onClick={() => deleteMutation.mutate()}
+            >
+              <Trash2 />
+            </Button>
+          )}
+          <DialogClose asChild>
+            <Button variant="outline">Cancel</Button>
+          </DialogClose>
+          <Button onClick={() => saveMutation.mutate()} disabled={saveMutation.isPending || jsonInvalid || !inputValid}>
+            Save
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   )
 }
 
@@ -1036,46 +1034,46 @@ function ResultSheet({
           <SheetDescription>One example, one run.</SheetDescription>
         </SheetHeader>
         {item && (
-          <div className="flex flex-1 flex-col gap-4 overflow-auto px-4 py-2 text-sm">
-            <Field label="Input">
-              {(() => {
-                const turns = inputTurns(example?.input ?? '')
-                return turns ? <TranscriptView turns={turns} /> : <p>{inputPreview(example?.input ?? '')}</p>
-              })()}
-            </Field>
-            <Field label="Expected">
-              <p className="text-muted-foreground">{example?.expected ?? '—'}</p>
-            </Field>
-            <Field label="Answer">
-              <p className="rounded-md border bg-card/40 p-2">
-                {item.status === 'error' ? '— (run failed)' : item.output}
-              </p>
-            </Field>
-            <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-              <StatusIcon status={item.status} />
-              <span>{(item.latencyMs / 1000).toFixed(1)}s</span>
-              <span>· {item.tokens} tok</span>
-            </div>
-            {item.traceId && (
-              <Field label="Trace">
-                <Link
-                  to="/traces/$traceId"
-                  params={{ traceId: item.traceId }}
-                  className="inline-flex items-center gap-1 font-mono text-xs text-primary hover:underline"
-                >
-                  open trace {item.traceId}
-                  <HugeiconsIcon icon={Link01Icon} className="size-3" strokeWidth={2} />
-                </Link>
+          <ScrollArea className="min-h-0 flex-1">
+            <div className="flex flex-col gap-4 px-4 py-2 text-sm">
+              <Field label="Input">
+                {(() => {
+                  const turns = inputTurns(example?.input ?? '')
+                  return turns ? <TranscriptView turns={turns} /> : <p>{inputPreview(example?.input ?? '')}</p>
+                })()}
               </Field>
-            )}
-            <Field label="Score">
-              {item.status === 'error' ? (
-                <span className="text-xs text-muted-foreground">—</span>
-              ) : (
-                <ScoreChips it={item} />
+              <Field label="Expected">
+                <p className="text-muted-foreground">{example?.expected ?? '—'}</p>
+              </Field>
+              <Field label="Answer">
+                <p className="rounded-md border bg-card/40 p-2">
+                  {item.status === 'error' ? '— (run failed)' : item.output}
+                </p>
+              </Field>
+              <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                <StatusIcon status={item.status} />
+                <span>{(item.latencyMs / 1000).toFixed(1)}s</span>
+                <span>· {item.tokens} tok</span>
+              </div>
+              {item.traceId && (
+                <Field label="Trace">
+                  <Button asChild variant="link" size="sm" className="h-auto justify-start p-0 font-mono text-xs">
+                    <Link to="/traces/$traceId" params={{ traceId: item.traceId }}>
+                      open trace {item.traceId}
+                      <LinkIcon className="size-3" />
+                    </Link>
+                  </Button>
+                </Field>
               )}
-            </Field>
-          </div>
+              <Field label="Score">
+                {item.status === 'error' ? (
+                  <span className="text-xs text-muted-foreground">—</span>
+                ) : (
+                  <ScoreChips it={item} />
+                )}
+              </Field>
+            </div>
+          </ScrollArea>
         )}
         <SheetFooter>
           <SheetClose asChild>
@@ -1165,7 +1163,7 @@ function InputEditor({
         onChange={(e) => commit(e.target.value)}
         onBlur={() => parsed && setText(JSON.stringify(parsed, null, 2))}
         rows={looksJson ? 8 : 3}
-        className="font-mono text-xs"
+        className={cn('text-xs', looksJson && 'font-mono')}
         placeholder={'Plain text, or JSON multi-turn:\n[{ "role": "user", "content": "…" }]'}
       />
       {looksJson &&
@@ -1212,12 +1210,12 @@ function MetadataEditor({
             className="text-muted-foreground hover:text-destructive"
             onClick={() => onChange(pairs.filter((_, idx) => idx !== i))}
           >
-            <HugeiconsIcon icon={Delete02Icon} className="size-4" strokeWidth={2} />
+            <Trash2 className="size-4" />
           </button>
         </div>
       ))}
       <Button variant="outline" size="sm" className="self-start" onClick={() => onChange([...pairs, ['', '']])}>
-        <HugeiconsIcon icon={Add01Icon} strokeWidth={2} data-icon="inline-start" />
+        <Plus data-icon="inline-start" />
         Field
       </Button>
     </div>
@@ -1256,7 +1254,7 @@ function countOverrides(o: AgentOverrides): number {
 
 // Per-run overrides sent to the agent. Sampling/model/system map to native Responses
 // params; tools are AG-UI client-tool declarations the agent may call (not executed here).
-function AgentOverridesDrawer({
+function AgentOverridesDialog({
   open,
   onClose,
   overrides,
@@ -1279,110 +1277,117 @@ function AgentOverridesDrawer({
   const numField = (v: number | null | undefined) => (v == null ? '' : String(v))
 
   return (
-    <Sheet open={open} onOpenChange={(o) => !o && onClose()}>
-      <SheetContent className="flex w-full flex-col gap-0 sm:max-w-md">
-        <SheetHeader>
-          <SheetTitle>Agent overrides</SheetTitle>
-          <SheetDescription>
+    <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="sm:max-w-3xl">
+        <DialogHeader>
+          <DialogTitle>Agent overrides</DialogTitle>
+          <DialogDescription>
             Applied to every example on the next run. Empty fields use the agent's defaults.
-          </SheetDescription>
-        </SheetHeader>
-        <div className="flex flex-1 flex-col gap-5 overflow-auto px-4 py-3">
-          <Field label="Model">
-            <Select
-              value={overrides.model ?? 'default'}
-              onValueChange={(v) => set({ model: v === 'default' ? null : v })}
-            >
-              <SelectTrigger className="h-8">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="default">Agent default</SelectItem>
-                {OVERRIDE_MODELS.map((m) => (
-                  <SelectItem key={m} value={m} className="font-mono text-xs">
-                    {m}
-                  </SelectItem>
+          </DialogDescription>
+        </DialogHeader>
+        <ScrollArea className="-mx-1 [&>[data-slot=scroll-area-viewport]]:max-h-[70vh]">
+          <div className="grid gap-x-6 gap-y-4 px-1 sm:grid-cols-2">
+            <Field label="Model">
+              <Select
+                value={overrides.model ?? 'default'}
+                onValueChange={(v) => set({ model: v === 'default' ? null : v })}
+              >
+                <SelectTrigger className="h-8 w-full text-xs">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="default">Agent default</SelectItem>
+                  {OVERRIDE_MODELS.map((m) => (
+                    <SelectItem key={m} value={m} className="font-mono text-xs">
+                      {m}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </Field>
+
+            <Field label="Sampling">
+              <div className="flex gap-2">
+                {(['temperature', 'top_p', 'max_tokens'] as const).map((key) => (
+                  <div key={key} className="flex min-w-0 flex-1 flex-col gap-1">
+                    <span className="truncate font-mono text-[10px] text-muted-foreground">{key}</span>
+                    <Input
+                      value={numField(overrides[key])}
+                      onChange={onNum(key)}
+                      placeholder="default"
+                      inputMode={key === 'max_tokens' ? 'numeric' : 'decimal'}
+                      className="h-8 font-mono text-xs placeholder:font-sans"
+                    />
+                  </div>
                 ))}
-              </SelectContent>
-            </Select>
-          </Field>
-
-          <Field label="System prompt">
-            <Textarea
-              rows={3}
-              value={overrides.system_prompt ?? ''}
-              onChange={(e) => set({ system_prompt: e.target.value || null })}
-              placeholder="Override the agent's system prompt…"
-            />
-          </Field>
-
-          <Field label="Tools">
-            <p className="text-[11px] text-muted-foreground">
-              Client tool declarations sent to the agent (AG-UI shape). The agent may call them; results aren't executed
-              here.
-            </p>
-            {tools.map((t, i) => (
-              // biome-ignore lint/suspicious/noArrayIndexKey: positional tool rows
-              <div key={i} className="flex items-center gap-1.5">
-                <Input
-                  value={t.name}
-                  onChange={(e) => setTool(i, { name: e.target.value })}
-                  placeholder="tool_name"
-                  className="h-8 font-mono text-xs"
-                />
-                <Input
-                  value={t.description ?? ''}
-                  onChange={(e) => setTool(i, { description: e.target.value })}
-                  placeholder="what it does"
-                  className="h-8 text-xs"
-                />
-                <button
-                  type="button"
-                  className="text-muted-foreground hover:text-destructive"
-                  onClick={() => set({ tools: tools.filter((_, idx) => idx !== i) })}
-                >
-                  <HugeiconsIcon icon={Delete02Icon} className="size-4" strokeWidth={2} />
-                </button>
               </div>
-            ))}
-            <Button
-              variant="outline"
-              size="sm"
-              className="self-start"
-              onClick={() => set({ tools: [...tools, { name: '' }] })}
-            >
-              <HugeiconsIcon icon={Add01Icon} strokeWidth={2} data-icon="inline-start" />
-              Tool
-            </Button>
-          </Field>
+            </Field>
 
-          <Field label="Sampling">
-            <div className="flex flex-col gap-3">
-              {(['temperature', 'top_p', 'max_tokens'] as const).map((key) => (
-                <div key={key} className="flex items-center justify-between gap-3">
-                  <span className="font-mono text-xs text-muted-foreground">{key}</span>
-                  <Input
-                    value={numField(overrides[key])}
-                    onChange={onNum(key)}
-                    placeholder="default"
-                    inputMode={key === 'max_tokens' ? 'numeric' : 'decimal'}
-                    className="h-8 w-28 font-mono text-xs"
-                  />
-                </div>
-              ))}
+            <div className="sm:col-span-2">
+              <Field label="System prompt">
+                <Textarea
+                  rows={2}
+                  value={overrides.system_prompt ?? ''}
+                  onChange={(e) => set({ system_prompt: e.target.value || null })}
+                  placeholder="Override the agent's system prompt…"
+                  className="min-h-16 text-xs"
+                />
+              </Field>
             </div>
-          </Field>
-        </div>
-        <SheetFooter>
+
+            <div className="sm:col-span-2">
+              <Field label="Tools">
+                <p className="text-[11px] text-muted-foreground">
+                  Client tool declarations sent to the agent (AG-UI shape). The agent may call them; results aren't
+                  executed here.
+                </p>
+                {tools.map((t, i) => (
+                  // biome-ignore lint/suspicious/noArrayIndexKey: positional tool rows
+                  <div key={i} className="flex items-center gap-1.5">
+                    <Input
+                      value={t.name}
+                      onChange={(e) => setTool(i, { name: e.target.value })}
+                      placeholder="tool_name"
+                      className="h-8 font-mono text-xs"
+                    />
+                    <Input
+                      value={t.description ?? ''}
+                      onChange={(e) => setTool(i, { description: e.target.value })}
+                      placeholder="what it does"
+                      className="h-8 text-xs"
+                    />
+                    <button
+                      type="button"
+                      className="text-muted-foreground hover:text-destructive"
+                      onClick={() => set({ tools: tools.filter((_, idx) => idx !== i) })}
+                    >
+                      <Trash2 className="size-4" />
+                    </button>
+                  </div>
+                ))}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="self-start"
+                  onClick={() => set({ tools: [...tools, { name: '' }] })}
+                >
+                  <Plus data-icon="inline-start" />
+                  Tool
+                </Button>
+              </Field>
+            </div>
+          </div>
+        </ScrollArea>
+        <DialogFooter>
           <Button variant="outline" onClick={() => onChange({})}>
             Reset
           </Button>
-          <SheetClose asChild>
+          <DialogClose asChild>
             <Button>Done</Button>
-          </SheetClose>
-        </SheetFooter>
-      </SheetContent>
-    </Sheet>
+          </DialogClose>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   )
 }
 

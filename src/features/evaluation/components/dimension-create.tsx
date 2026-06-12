@@ -5,6 +5,7 @@ import { Button } from '#/components/ui/button'
 import { Input } from '#/components/ui/input'
 import { Label } from '#/components/ui/label'
 import { ToggleGroup, ToggleGroupItem } from '#/components/ui/toggle-group'
+import { ThumbDownIcon, ThumbUpIcon } from '#/features/evaluation/components/score-value'
 import { upsertScoreConfig } from '#/features/evaluation/server/scores'
 import {
   defaultCategoryPolarity,
@@ -74,6 +75,7 @@ export function DimensionForm({ onCreated, onCancel }: { onCreated: (c: ScoreCon
           value={name}
           onChange={(e) => setName(e.target.value)}
           placeholder="tool_selection"
+          className="text-xs"
           autoFocus
         />
       </div>
@@ -96,7 +98,7 @@ export function DimensionForm({ onCreated, onCancel }: { onCreated: (c: ScoreCon
       {dataType === 'categorical' && (
         <div className="flex flex-col gap-1.5">
           <Label htmlFor="dim-cats">Categories (comma-separated)</Label>
-          <Input id="dim-cats" value={categories} onChange={(e) => setCategories(e.target.value)} />
+          <Input id="dim-cats" value={categories} onChange={(e) => setCategories(e.target.value)} className="text-xs" />
           {categories.trim() && parsedCategories.length === 0 && (
             <span className="text-xs text-destructive">Enter at least one category.</span>
           )}
@@ -113,13 +115,13 @@ export function DimensionForm({ onCreated, onCancel }: { onCreated: (c: ScoreCon
                     variant="outline"
                   >
                     <ToggleGroupItem value="good" aria-label="Pass">
-                      👍
+                      <ThumbUpIcon />
                     </ToggleGroupItem>
                     <ToggleGroupItem value="neutral" aria-label="Neutral">
                       –
                     </ToggleGroupItem>
                     <ToggleGroupItem value="bad" aria-label="Fail">
-                      👎
+                      <ThumbDownIcon />
                     </ToggleGroupItem>
                   </ToggleGroup>
                 </div>
@@ -138,7 +140,7 @@ export function DimensionForm({ onCreated, onCancel }: { onCreated: (c: ScoreCon
                 type="number"
                 value={minValue}
                 onChange={(e) => setMinValue(e.target.value)}
-                className="w-24"
+                className="w-24 text-xs"
               />
             </div>
             <div className="flex flex-col gap-1.5">
@@ -148,7 +150,7 @@ export function DimensionForm({ onCreated, onCancel }: { onCreated: (c: ScoreCon
                 type="number"
                 value={maxValue}
                 onChange={(e) => setMaxValue(e.target.value)}
-                className="w-24"
+                className="w-24 text-xs"
               />
             </div>
           </div>

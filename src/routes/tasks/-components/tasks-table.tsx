@@ -1,4 +1,3 @@
-import { IconChevronLeft, IconChevronRight, IconChevronsLeft, IconChevronsRight } from '@tabler/icons-react'
 import {
   type ColumnFiltersState,
   flexRender,
@@ -12,6 +11,7 @@ import {
   useReactTable,
   type VisibilityState,
 } from '@tanstack/react-table'
+import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight } from 'lucide-react'
 import * as React from 'react'
 import type { AutoRefreshInterval } from '#/components/auto-refresh-select'
 import { DataTableToolbar, type FacetedFilterSpec } from '#/components/data-table-toolbar'
@@ -165,7 +165,7 @@ export function TasksDataTable({
                 value={`${table.getState().pagination.pageSize}`}
                 onValueChange={(value) => table.setPageSize(Number(value))}
               >
-                <SelectTrigger size="sm" className="w-[68px]" id="rows-per-page">
+                <SelectTrigger size="sm" className="w-[68px] text-xs" id="rows-per-page">
                   <SelectValue placeholder={table.getState().pagination.pageSize} />
                 </SelectTrigger>
                 <SelectContent side="top">
@@ -189,7 +189,7 @@ export function TasksDataTable({
                 disabled={!table.getCanPreviousPage()}
               >
                 <span className="sr-only">First page</span>
-                <IconChevronsLeft />
+                <ChevronsLeft aria-hidden />
               </Button>
               <Button
                 variant="outline"
@@ -198,7 +198,7 @@ export function TasksDataTable({
                 disabled={!table.getCanPreviousPage()}
               >
                 <span className="sr-only">Previous page</span>
-                <IconChevronLeft />
+                <ChevronLeft aria-hidden />
               </Button>
               <Button
                 variant="outline"
@@ -207,7 +207,7 @@ export function TasksDataTable({
                 disabled={!table.getCanNextPage()}
               >
                 <span className="sr-only">Next page</span>
-                <IconChevronRight />
+                <ChevronRight aria-hidden />
               </Button>
               <Button
                 variant="outline"
@@ -217,7 +217,7 @@ export function TasksDataTable({
                 disabled={!table.getCanNextPage()}
               >
                 <span className="sr-only">Last page</span>
-                <IconChevronsRight />
+                <ChevronsRight aria-hidden />
               </Button>
             </div>
           </div>
