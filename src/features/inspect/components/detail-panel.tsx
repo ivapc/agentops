@@ -242,7 +242,7 @@ function MessagesBlock({
   outputType?: string
   view?: InspectorView
 }) {
-  const inputMsgs = useMemo(() => asMessages(input), [input])
+  const inputMsgs = useMemo(() => asMessages(input).filter((m) => m.role !== 'system'), [input])
   const outputMsgs = useMemo(() => asMessages(output), [output])
   // Tool results live on the sibling execute_tool span — asMessages drops
   // tool-role messages — so we splice them back in keyed by tool_call id.
@@ -571,7 +571,7 @@ function CollapsibleText({ content }: { content: string }) {
       </pre>
       <CollapsibleTrigger asChild>
         <button type="button" className="mt-1 text-[11px] font-medium text-primary hover:underline">
-          {open ? 'Show less' : `Show all (${content.length.toLocaleString()} chars)`}
+          {open ? 'Show less' : `Show all (${content.length.toLocaleString('en-US')} chars)`}
         </button>
       </CollapsibleTrigger>
     </Collapsible>

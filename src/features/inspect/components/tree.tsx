@@ -1,7 +1,13 @@
 import { Braces, ChevronDown, ChevronRight, Clock } from 'lucide-react'
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip'
-import { type InspectorView, isCollapsibleInfra, isToolLike, spanHasError } from '#/features/inspect/logic'
+import {
+  type InspectorView,
+  isCollapsibleInfra,
+  isNestedQueryEmbedding,
+  isToolLike,
+  spanHasError,
+} from '#/features/inspect/logic'
 import type { Span } from '#/lib/spans'
 import { ACCENT } from '#/lib/tone'
 import { cn } from '#/lib/utils'
@@ -55,9 +61,11 @@ export function buildRows(view: InspectorView, collapsedIds: Set<string>, rawRoo
     const key = `${parentId ?? ''}|${rootId ?? ''}`
     if (visibleChildren.has(key)) return visibleChildren.get(key) as Span[]
     const showRaw = rootId != null && rawRoots.has(rootId)
+    const parent = parentId != null ? view.byId.get(parentId) : undefined
     const out: Span[] = []
     for (const span of byParent.get(parentId) ?? []) {
-      if (!showRaw && isCollapsibleInfra(span)) out.push(...collect(span.id, rootId))
+      if (!showRaw && (isCollapsibleInfra(span) || isNestedQueryEmbedding(span, parent)))
+        out.push(...collect(span.id, rootId))
       else out.push(span)
     }
     visibleChildren.set(key, out)
@@ -197,12 +205,10 @@ export function SpanTreeList({
 
     const ancestorIds: string[] = []
     let rootId: string = target.id
-    let hasInfraOnPath = isCollapsibleInfra(target)
     for (let pid = target.parentId; pid; ) {
       const parent = view.byId.get(pid)
       if (!parent) break
       ancestorIds.push(pid)
-      if (isCollapsibleInfra(parent)) hasInfraOnPath = true
       rootId = pid
       pid = parent.parentId ?? null
     }
@@ -212,7 +218,10 @@ export function SpanTreeList({
       for (const id of ancestorIds) next.delete(id)
       return next
     })
-    if (hasInfraOnPath) onEnsureRawRoot(rootId)
+    // Infra ancestors don't hide the target — buildRows promotes their
+    // children — so only a target that is itself collapsed needs raw on.
+    const targetParent = target.parentId ? view.byId.get(target.parentId) : undefined
+    if (isCollapsibleInfra(target) || isNestedQueryEmbedding(target, targetParent)) onEnsureRawRoot(rootId)
     requestAnimationFrame(() => {
       document.querySelector(`[data-span-id="${selectedId}"]`)?.scrollIntoView({ block: 'nearest' })
     })
