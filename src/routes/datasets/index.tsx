@@ -1,6 +1,3 @@
-import { Add01Icon, Database01Icon, PlayCircleIcon } from '@hugeicons/core-free-icons'
-import { HugeiconsIcon } from '@hugeicons/react'
-import { IconSearch } from '@tabler/icons-react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import {
@@ -12,15 +9,17 @@ import {
   getFilteredRowModel,
   useReactTable,
 } from '@tanstack/react-table'
-import { formatDistanceToNow } from 'date-fns'
+import { CirclePlay, Database, Plus, Search } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { toast } from 'sonner'
 import { DataTableFacetedFilter } from '#/components/data-table-faceted-filter'
 import { Page } from '#/components/page'
+import { RelativeTime } from '#/components/relative-time'
 import { Badge } from '#/components/ui/badge'
 import { Button } from '#/components/ui/button'
 import {
   Dialog,
+  DialogClose,
   DialogContent,
   DialogDescription,
   DialogFooter,
@@ -32,18 +31,17 @@ import { Input } from '#/components/ui/input'
 import { Label } from '#/components/ui/label'
 import { Textarea } from '#/components/ui/textarea'
 import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip'
+import type { DatasetListItem } from '#/features/evaluation'
 import { createDataset, runDataset } from '#/features/evaluation/server/datasets'
 import { errMessage } from '#/lib/format'
 import { queryKeys } from '#/lib/query-keys'
 import { DataGridBody } from './-components/data-grid'
-import { type DatasetListItem, datasetsListQuery } from './-data'
+import { datasetsListQuery } from './-data'
 
 export const Route = createFileRoute('/datasets/')({
   loader: ({ context }) => context.queryClient.ensureQueryData(datasetsListQuery()),
   component: DatasetsListPage,
 })
-
-const relTime = (ms: number) => formatDistanceToNow(new Date(ms), { addSuffix: true })
 
 function makeColumns(
   onRun: (d: DatasetListItem) => void,
@@ -79,17 +77,18 @@ function makeColumns(
     {
       id: 'lastRun',
       header: 'Last run',
-      cell: ({ row }) => (
-        <span className="text-sm text-muted-foreground">
-          {row.original.lastRunAt != null ? relTime(row.original.lastRunAt) : '—'}
-        </span>
-      ),
+      cell: ({ row }) =>
+        row.original.lastRunAt != null ? (
+          <RelativeTime ts={row.original.lastRunAt} className="text-sm text-muted-foreground" />
+        ) : (
+          <span className="text-sm text-muted-foreground">—</span>
+        ),
       meta: { headClassName: 'w-28' },
     },
     {
       id: 'updated',
       header: 'Updated',
-      cell: ({ row }) => <span className="text-sm text-muted-foreground">{relTime(row.original.updatedAt)}</span>,
+      cell: ({ row }) => <RelativeTime ts={row.original.updatedAt} className="text-sm text-muted-foreground" />,
       meta: { headClassName: 'w-28' },
     },
     {
@@ -124,7 +123,7 @@ function makeColumns(
                 onRun(row.original)
               }}
             >
-              <HugeiconsIcon icon={PlayCircleIcon} strokeWidth={2} />
+              <CirclePlay />
             </Button>
           </TooltipTrigger>
           <TooltipContent>
@@ -186,7 +185,10 @@ function DatasetsListPage() {
         <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-3 lg:px-6">
           <div className="flex flex-1 flex-wrap items-center gap-2">
             <div className="relative w-full min-w-0 sm:w-64">
-              <IconSearch className="pointer-events-none absolute top-1/2 left-2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+              <Search
+                className="pointer-events-none absolute top-1/2 left-2 size-3.5 -translate-y-1/2 text-muted-foreground"
+                aria-hidden
+              />
               <Input
                 placeholder="Search datasets…"
                 value={(nameColumn?.getFilterValue() as string) ?? ''}
@@ -204,7 +206,7 @@ function DatasetsListPage() {
             )}
           </div>
           <Button size="sm" onClick={() => setNewOpen(true)}>
-            <HugeiconsIcon icon={Add01Icon} strokeWidth={2} data-icon="inline-start" />
+            <Plus data-icon="inline-start" />
             New dataset
           </Button>
         </div>
@@ -213,7 +215,7 @@ function DatasetsListPage() {
           <Empty>
             <EmptyHeader>
               <EmptyMedia variant="icon">
-                <HugeiconsIcon icon={Database01Icon} strokeWidth={2} />
+                <Database />
               </EmptyMedia>
               <EmptyTitle>No datasets</EmptyTitle>
               <EmptyDescription>
@@ -284,7 +286,7 @@ function NewDatasetDialog({
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent>
+      <DialogContent className="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>New dataset</DialogTitle>
           <DialogDescription>Name it now; add example questions on the next screen.</DialogDescription>
@@ -297,6 +299,7 @@ function NewDatasetDialog({
               value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder="Regression set"
+              className="text-xs"
               autoFocus
             />
           </div>
@@ -308,6 +311,7 @@ function NewDatasetDialog({
               onChange={(e) => setDescription(e.target.value)}
               rows={2}
               placeholder="What this set covers…"
+              className="text-xs"
             />
           </div>
           <div className="flex flex-col gap-1.5">
@@ -316,14 +320,15 @@ function NewDatasetDialog({
               id="ds-tags"
               value={tags}
               onChange={(e) => setTags(e.target.value)}
-              placeholder="regression, billing (comma-separated)"
+              placeholder="regression, billing"
+              className="text-xs"
             />
           </div>
         </div>
         <DialogFooter>
-          <Button variant="outline" onClick={onClose}>
-            Cancel
-          </Button>
+          <DialogClose asChild>
+            <Button variant="outline">Cancel</Button>
+          </DialogClose>
           <Button onClick={() => createMutation.mutate()} disabled={!name.trim() || createMutation.isPending}>
             Create
           </Button>

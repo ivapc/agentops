@@ -1,12 +1,13 @@
-import { Clock01Icon } from '@hugeicons/core-free-icons'
-import { HugeiconsIcon } from '@hugeicons/react'
 import { Link } from '@tanstack/react-router'
 import type { ColumnDef } from '@tanstack/react-table'
 import { DataTableColumnHeader } from '#/components/data-table-column-header'
+import { KindBadge } from '#/components/kind-badge'
 import { RelativeTime } from '#/components/relative-time'
+import { costColumn, durationColumn, tokensColumn, userColumn } from '#/components/table-columns'
 import { Badge } from '#/components/ui/badge'
-import { formatCost, formatDuration, formatTokens, metricTone, truncateId } from '#/lib/format'
+import { truncateId } from '#/lib/format'
 import type { SpanSummary } from '#/lib/telemetry'
+import { ACCENT } from '#/lib/tone'
 
 export const spanColumns: ColumnDef<SpanSummary>[] = [
   {
@@ -50,11 +51,7 @@ export const spanColumns: ColumnDef<SpanSummary>[] = [
   {
     accessorKey: 'kind',
     header: ({ column }) => <DataTableColumnHeader column={column} title="Kind" />,
-    cell: ({ row }) => (
-      <Badge variant="outline" className="px-1.5 capitalize text-muted-foreground">
-        {row.original.kind}
-      </Badge>
-    ),
+    cell: ({ row }) => <KindBadge kind={row.original.kind} />,
     filterFn: (row, _id, value: string[]) => {
       if (!Array.isArray(value) || value.length === 0) return true
       return value.includes(row.original.kind)
@@ -66,9 +63,12 @@ export const spanColumns: ColumnDef<SpanSummary>[] = [
     header: ({ column }) => <DataTableColumnHeader column={column} title="Label" />,
     cell: ({ row }) =>
       row.original.label ? (
-        <Badge variant="outline" className="whitespace-nowrap font-mono text-[10px]" title={row.original.label}>
+        <span
+          className="whitespace-nowrap rounded bg-muted px-1.5 py-0.5 font-mono text-[10px] font-medium text-muted-foreground"
+          title={row.original.label}
+        >
           {row.original.label}
-        </Badge>
+        </span>
       ) : (
         <span className="text-muted-foreground/60">—</span>
       ),
@@ -80,40 +80,16 @@ export const spanColumns: ColumnDef<SpanSummary>[] = [
     cell: ({ row }) => {
       const m = row.original.modelId
       return m ? (
-        <span className="font-mono text-[11px]">{m}</span>
+        <span className={`font-mono text-[11px] ${ACCENT.violet.ident}`}>{m}</span>
       ) : (
         <span className="text-muted-foreground/60">—</span>
       )
     },
     enableSorting: false,
   },
-  {
-    accessorKey: 'totalTokens',
-    header: ({ column }) => <DataTableColumnHeader column={column} title="Tokens" className="justify-end" />,
-    cell: ({ row }) => <div className="text-right tabular-nums">{formatTokens(row.original.totalTokens)}</div>,
-  },
-  {
-    accessorKey: 'totalCostUsd',
-    header: ({ column }) => <DataTableColumnHeader column={column} title="Cost" className="justify-end" />,
-    cell: ({ row }) => {
-      const value = row.original.totalCostUsd ?? 0
-      return <div className={`text-right tabular-nums ${metricTone('cost', value)}`}>{formatCost(value)}</div>
-    },
-  },
-  {
-    id: 'duration',
-    accessorFn: (s) => s.durationMs,
-    header: ({ column }) => <DataTableColumnHeader column={column} title="Duration" className="justify-end" />,
-    cell: ({ row }) => {
-      const ms = row.original.durationMs
-      return (
-        <div className={`flex items-center justify-end gap-1 tabular-nums ${metricTone('duration', ms)}`}>
-          <HugeiconsIcon icon={Clock01Icon} strokeWidth={2} className="size-3.5 opacity-80" />
-          {formatDuration(ms)}
-        </div>
-      )
-    },
-  },
+  tokensColumn<SpanSummary>(),
+  costColumn<SpanSummary>(),
+  durationColumn<SpanSummary>((s) => s.durationMs),
   {
     id: 'trace',
     header: ({ column }) => <DataTableColumnHeader column={column} title="Trace" />,
@@ -129,22 +105,5 @@ export const spanColumns: ColumnDef<SpanSummary>[] = [
     ),
     enableSorting: false,
   },
-  {
-    id: 'user',
-    accessorFn: (s) => s.userId ?? s.userName ?? '',
-    header: ({ column }) => <DataTableColumnHeader column={column} title="User" />,
-    cell: ({ row }) => {
-      const s = row.original
-      const primary = s.userId ?? '—'
-      const secondary = s.userName && s.userId ? s.userName : undefined
-      return (
-        <div className="flex min-w-0 items-center gap-1.5">
-          <span className="min-w-0 max-w-[140px] truncate">{primary}</span>
-          {secondary && (
-            <span className="max-w-[120px] shrink-0 truncate text-xs text-muted-foreground">{secondary}</span>
-          )}
-        </div>
-      )
-    },
-  },
+  userColumn<SpanSummary>(),
 ]

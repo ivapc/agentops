@@ -1,22 +1,41 @@
 import { createServerFn } from '@tanstack/react-start'
 import { registerExtensions } from '#/extensions/server/bootstrap'
-import { type EnrichSpanRequest, getExtensions } from '#/lib/extension-registry'
 import type { JsonValue } from '#/lib/json'
+import type { Operation, TruncatableField } from '#/lib/spans'
 
-export type { EnrichSpanRequest }
+// Forks register sources via registerEnrichmentSource() at boot; upstream
+// ships an empty registry and the UI shows a static placeholder.
+// First non-null wins, registration order.
 
-// Returns the full value of a truncated span attribute from a registered
-// extension; null when none can resolve it. First non-null wins.
+export interface EnrichSpanRequest {
+  spanId: string
+  traceId: string
+  sessionId?: string
+  operation: Operation
+  field: TruncatableField
+}
+
+export interface EnrichmentSource {
+  name: string
+  resolve(req: EnrichSpanRequest): Promise<JsonValue | string | null>
+}
+
+const sources: EnrichmentSource[] = []
+
+export function registerEnrichmentSource(source: EnrichmentSource): void {
+  sources.push(source)
+}
+
 export const resolveTruncatedAttr = createServerFn({ method: 'POST' })
   .inputValidator((req: EnrichSpanRequest) => req)
   .handler(async ({ data }): Promise<JsonValue | string | null> => {
     registerExtensions()
-    for (const ext of getExtensions()) {
+    for (const source of sources) {
       try {
-        const result = await ext.resolveTruncatedAttr?.(data)
+        const result = await source.resolve(data)
         if (result != null) return result
       } catch (e) {
-        console.error(`[enrich-span] extension ${ext.name} failed:`, e)
+        console.error(`[enrich-span] source ${source.name} failed:`, e)
       }
     }
     return null

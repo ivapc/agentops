@@ -1,7 +1,8 @@
-// Shared evaluation types + display/aggregation helpers (see docs/plans/evaluation.md).
+// Shared evaluation types + display/aggregation helpers (see docs/explanation/evaluation.md).
 // One `Score` primitive (human/llm/code, disambiguated by `source`); these DTOs are the
-// serialized (epoch-ms) shape returned by the server fns in src/server/scores.ts.
+// serialized (epoch-ms) shape returned by the server fns in src/features/evaluation/server/scores.ts.
 import type { JsonValue } from '#/lib/json'
+import { ACCENT } from '#/lib/tone'
 
 export type ScoreDataType = 'numeric' | 'categorical' | 'boolean' | 'text'
 export type ScoreTargetKind = 'span' | 'trace' | 'session'
@@ -120,7 +121,6 @@ export function scoreFlagsFor(summary: ScoreSummary | undefined): ScoreFlag[] {
   return flags
 }
 
-// evaluators (in-app runner)
 export type EvalScope = ScoreTargetKind
 export type EvalSourceKind = 'llm' | 'code'
 export type EvalMode = 'offline' | 'online'
@@ -345,7 +345,9 @@ function trimNum(n: number): string {
 }
 
 // The polarity/scale hints a dimension's score_config carries, for classifying scores.
-function configToHint(c: ScoreConfig): ConfigHint {
+export function configToHint(
+  c: Pick<ScoreConfig, 'minValue' | 'maxValue' | 'passLabels' | 'failLabels' | 'direction'>,
+): ConfigHint {
   return {
     minValue: c.minValue,
     maxValue: c.maxValue,
@@ -373,8 +375,8 @@ export function draftIsBad(config: ScoreConfig, draft: ScoreDraftShape): boolean
 }
 
 export const SCORE_TONE_CLASS: Record<ScoreTone, string> = {
-  good: 'text-emerald-600 dark:text-emerald-400',
-  warn: 'text-amber-600 dark:text-amber-400',
+  good: ACCENT.emerald.status,
+  warn: ACCENT.amber.status,
   bad: 'text-destructive',
   neutral: 'text-muted-foreground',
 }
@@ -382,8 +384,8 @@ export const SCORE_TONE_CLASS: Record<ScoreTone, string> = {
 // Background fills for tone dots (the text-color classes above don't show on a
 // textless filled dot).
 export const SCORE_TONE_DOT: Record<ScoreTone, string> = {
-  good: 'bg-emerald-500',
-  warn: 'bg-amber-500',
+  good: ACCENT.emerald.solid,
+  warn: ACCENT.amber.solid,
   bad: 'bg-destructive',
   neutral: 'bg-muted-foreground',
 }
@@ -400,6 +402,13 @@ export const SCORE_SOURCE_LABEL: Record<ScoreSource, string> = {
   human: 'Human',
   llm: 'LLM judge',
   code: 'Code',
+}
+
+export const DATA_TYPE_LABEL: Record<ScoreDataType, string> = {
+  numeric: 'Numeric',
+  categorical: 'Categorical',
+  boolean: 'Boolean',
+  text: 'Text',
 }
 
 // Latest row per (name, evaluator) for run-less scores — what the list views show.

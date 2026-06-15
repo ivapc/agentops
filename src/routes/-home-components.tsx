@@ -1,16 +1,15 @@
-import { ChevronDownIcon } from '@heroicons/react/20/solid'
-import { HugeiconsIcon } from '@hugeicons/react'
-import { IconInfoCircle } from '@tabler/icons-react'
 import { Link } from '@tanstack/react-router'
+import { ChevronDown, Info } from 'lucide-react'
 import { useState } from 'react'
 import { RelativeTime } from '#/components/relative-time'
 import { Card, CardAction, CardContent, CardHeader, CardTitle } from '#/components/ui/card'
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from '#/components/ui/empty'
 import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip'
-import type { InventoryRow } from '#/features/inbox'
+import type { InventoryRow } from '#/features/inventory/server'
 import { formatPercent, formatTokens, tokensFromChars } from '#/lib/format'
 import type { ToolErrorRow, ToolPayloadRow } from '#/lib/telemetry'
-import { toolDisplayName, toolTone } from '#/lib/tools'
+import { ACCENT, toolTone } from '#/lib/tone'
+import { toolDisplayName } from '#/lib/tools'
 
 const PREVIEW_ROWS = 5
 
@@ -19,16 +18,14 @@ export function Section({
   description,
   action,
   children,
-  wide,
 }: {
   title: string
   description?: string
   action?: React.ReactNode
   children: React.ReactNode
-  wide?: boolean
 }) {
   return (
-    <Card className={wide ? 'xl:col-span-2' : ''}>
+    <Card>
       <CardHeader>
         <CardTitle className="flex items-center gap-1.5">
           {title}
@@ -40,7 +37,7 @@ export function Section({
                   aria-label={`About ${title}`}
                   className="cursor-help text-muted-foreground hover:text-foreground"
                 >
-                  <IconInfoCircle className="size-3.5" />
+                  <Info className="size-3.5" aria-hidden />
                 </button>
               </TooltipTrigger>
               <TooltipContent>{description}</TooltipContent>
@@ -54,7 +51,7 @@ export function Section({
   )
 }
 
-export function SectionEmpty({ title, description }: { title: string; description?: string }) {
+function SectionEmpty({ title, description }: { title: string; description?: string }) {
   return (
     <Empty className="py-4">
       <EmptyHeader>
@@ -65,7 +62,7 @@ export function SectionEmpty({ title, description }: { title: string; descriptio
   )
 }
 
-export function Expandable<T>({ rows, children }: { rows: T[]; children: (visible: T[]) => React.ReactNode }) {
+function Expandable<T>({ rows, children }: { rows: T[]; children: (visible: T[]) => React.ReactNode }) {
   const [expanded, setExpanded] = useState(false)
   const hasMore = rows.length > PREVIEW_ROWS
   const visible = expanded || !hasMore ? rows : rows.slice(0, PREVIEW_ROWS)
@@ -78,7 +75,7 @@ export function Expandable<T>({ rows, children }: { rows: T[]; children: (visibl
           onClick={() => setExpanded((v) => !v)}
           className="mt-2 inline-flex cursor-pointer items-center gap-1.5 text-xs font-medium text-muted-foreground hover:text-foreground"
         >
-          <ChevronDownIcon className={`size-3.5 transition-transform ${expanded ? 'rotate-180' : ''}`} />
+          <ChevronDown className={`size-3.5 transition-transform ${expanded ? 'rotate-180' : ''}`} aria-hidden />
           {expanded ? 'Show less' : `Show more (${rows.length - PREVIEW_ROWS})`}
         </button>
       )}
@@ -128,8 +125,11 @@ function ToolStatRow({
         className="group flex flex-col gap-1 rounded-md px-2 py-2 transition-colors hover:bg-muted/60"
       >
         <div className="flex items-center gap-2">
-          <HugeiconsIcon icon={tone.icon} strokeWidth={1.5} className={`size-3.5 shrink-0 ${tone.text}`} aria-hidden />
-          <span className="min-w-0 flex-1 truncate font-mono text-sm font-medium text-foreground" title={display}>
+          <tone.icon className={`size-3.5 shrink-0 ${tone.text}`} aria-hidden />
+          <span
+            className={`min-w-0 flex-1 truncate font-mono text-xs font-medium ${ACCENT.violet.ident}`}
+            title={display}
+          >
             {display}
           </span>
           <span className={`shrink-0 text-sm font-semibold tabular-nums ${valueTone}`}>{value}</span>
@@ -155,22 +155,18 @@ export function ToolErrorTable({ rows }: { rows: ToolErrorRow[] }) {
     return <SectionEmpty title="No errored tool calls" description="Nothing failed in this window." />
   }
   return (
-    <Expandable rows={rows}>
-      {(visible) => (
-        <ul className="-mx-2 flex flex-col">
-          {visible.map((row) => (
-            <ToolStatRow
-              key={row.name}
-              name={row.name}
-              value={formatPercent(row.errorRate, 1)}
-              valueTone={rateTextTone(row.errorRate)}
-              meta={`${row.errors.toLocaleString()} / ${row.total.toLocaleString()} calls`}
-              bar={{ pct: row.errorRate, tone: rateBarTone(row.errorRate) }}
-            />
-          ))}
-        </ul>
-      )}
-    </Expandable>
+    <ul className="-mx-2 flex flex-col">
+      {rows.map((row) => (
+        <ToolStatRow
+          key={row.name}
+          name={row.name}
+          value={formatPercent(row.errorRate, 1)}
+          valueTone={rateTextTone(row.errorRate)}
+          meta={`${row.errors.toLocaleString()} / ${row.total.toLocaleString()} calls`}
+          bar={{ pct: row.errorRate, tone: rateBarTone(row.errorRate) }}
+        />
+      ))}
+    </ul>
   )
 }
 
@@ -180,25 +176,21 @@ export function ToolPayloadTable({ rows }: { rows: ToolPayloadRow[] }) {
   }
   const maxP95 = Math.max(...rows.map((r) => r.p95Chars), 1)
   return (
-    <Expandable rows={rows}>
-      {(visible) => (
-        <ul className="-mx-2 flex flex-col">
-          {visible.map((row) => {
-            const p95Tok = tokensFromChars(row.p95Chars)
-            return (
-              <ToolStatRow
-                key={row.name}
-                name={row.name}
-                value={`${formatTokens(p95Tok)} tok`}
-                valueTone={sizeTextTone(p95Tok)}
-                meta={`avg ${formatTokens(tokensFromChars(row.avgChars))} · max ${formatTokens(tokensFromChars(row.maxChars))}`}
-                bar={{ pct: row.p95Chars / maxP95, tone: 'bg-primary/60' }}
-              />
-            )
-          })}
-        </ul>
-      )}
-    </Expandable>
+    <ul className="-mx-2 flex flex-col">
+      {rows.map((row) => {
+        const p95Tok = tokensFromChars(row.p95Chars)
+        return (
+          <ToolStatRow
+            key={row.name}
+            name={row.name}
+            value={`${formatTokens(p95Tok)} tok`}
+            valueTone={sizeTextTone(p95Tok)}
+            meta={`avg ${formatTokens(tokensFromChars(row.avgChars))} · max ${formatTokens(tokensFromChars(row.maxChars))}`}
+            bar={{ pct: row.p95Chars / maxP95, tone: 'bg-primary/60' }}
+          />
+        )
+      })}
+    </ul>
   )
 }
 
@@ -217,17 +209,12 @@ export function NewToolsTable({ rows }: { rows: InventoryRow[] }) {
             search={(prev) => ({ ...(prev as object), tool: toolDisplayName(row.name) })}
             className="group flex items-center gap-2 rounded-md px-2 py-2 transition-colors hover:bg-muted/60"
           >
-            <HugeiconsIcon
-              icon={tone.icon}
-              strokeWidth={1.5}
-              className={`size-3.5 shrink-0 ${tone.text}`}
-              aria-hidden
-            />
-            <span className="min-w-0 flex-1 truncate font-mono text-sm font-medium text-foreground" title={row.name}>
+            <tone.icon className={`size-3.5 shrink-0 ${tone.text}`} aria-hidden />
+            <span
+              className={`min-w-0 flex-1 truncate font-mono text-xs font-medium ${ACCENT.violet.ident}`}
+              title={row.name}
+            >
               {toolDisplayName(row.name)}
-            </span>
-            <span className="shrink-0 truncate text-[11px] text-muted-foreground" title={row.namespace || 'unknown'}>
-              {row.namespace || 'unknown'}
             </span>
             <RelativeTime ts={row.firstSeenAtMs} className="shrink-0 text-[11px] tabular-nums text-muted-foreground" />
           </Link>
@@ -249,13 +236,11 @@ export function NewAgentsTable({ rows }: { rows: InventoryRow[] }) {
           {visible.map((row) => {
             const inner = (
               <>
-                <HugeiconsIcon
-                  icon={tone.icon}
-                  strokeWidth={1.5}
-                  className={`size-3.5 shrink-0 ${tone.text}`}
-                  aria-hidden
-                />
-                <span className="min-w-0 flex-1 truncate text-sm font-medium text-foreground" title={row.name}>
+                <tone.icon className={`size-3.5 shrink-0 ${tone.text}`} aria-hidden />
+                <span
+                  className={`min-w-0 flex-1 truncate font-mono text-xs font-medium ${ACCENT.emerald.ident}`}
+                  title={row.name}
+                >
                   {row.name}
                 </span>
                 <RelativeTime

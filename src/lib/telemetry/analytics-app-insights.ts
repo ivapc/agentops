@@ -85,7 +85,7 @@ export async function fetchAllTools(p: AppInsightsProvider, opts?: TopOpts): Pro
     const errors = Number(r.errors ?? 0)
     const raw = String(r.name ?? '')
     return {
-      name: raw.startsWith('execute_tool ') ? raw.slice('execute_tool '.length) : raw,
+      name: extractToolName(raw) ?? raw,
       calls,
       errors,
       errorRate: calls > 0 ? errors / calls : 0,
@@ -236,16 +236,9 @@ export async function fetchInventory(
   kind: InventoryDiscoveryKind,
   opts?: WindowOpts,
 ): Promise<InventoryObservation[]> {
-  // Agents: nested = ever invoked as a sub-agent, i.e. at least one invocation's
-  // parent is an execute_tool span. A utility agent like ui_agent runs mostly
-  // under execute_tool but occasionally under an internal orchestration span, so
-  // "all invocations nested" (min) would mislabel it main — "ever nested" (max)
-  // is what distinguishes a sub-agent from the top-level orchestrator. MAF stamps
-  // an instance hex in the span name on *every* agent, top-level included, so the
-  // old `name.includes('(')` heuristic mislabeled orchestrators as sub-agents.
-  // The system prompt lives on the child `chat` span (gen_ai.system_instructions
-  // is absent on the invoke_agent span), so pull it from there. Parent sides are
-  // projected to id/name only and pre-filtered to stay under the join budget.
+  // ever_nested: agent invoked under execute_tool at least once (a utility agent
+  // can run both nested and top-level, so join the parent span rather than guess
+  // from the name). Parent side projected to id to bound the join.
   const q =
     kind === 'new_tool'
       ? `
@@ -262,16 +255,6 @@ export async function fetchInventory(
     let tool_parents = union dependencies, requests
       | where name startswith "execute_tool "
       | project parent_id = id, parent_is_tool = 1;
-    let agent_parents = union dependencies, requests
-      | where name startswith "invoke_agent "
-      | project parent_id = id, parent_name = name;
-    let chat_prompts = union dependencies, requests
-      | where tostring(customDimensions["gen_ai.operation.name"]) == "chat"
-      | extend sys = tostring(customDimensions["gen_ai.system_instructions"])
-      | where isnotempty(sys)
-      | project sys, operation_ParentId
-      | join kind=inner (agent_parents) on $left.operation_ParentId == $right.parent_id
-      | summarize chat_system_instructions = take_any(sys) by operation_name = parent_name;
     union dependencies, requests
     | where name startswith "invoke_agent "
     | join kind=leftouter (tool_parents) on $left.operation_ParentId == $right.parent_id
@@ -280,11 +263,9 @@ export async function fetchInventory(
         last_seen  = max(timestamp),
         sample_trace_id = any(operation_Id),
         description = take_anyif(tostring(customDimensions["gen_ai.agent.description"]), isnotempty(tostring(customDimensions["gen_ai.agent.description"]))),
-        span_system_instructions = take_anyif(tostring(customDimensions["gen_ai.system_instructions"]), isnotempty(tostring(customDimensions["gen_ai.system_instructions"]))),
+        system_instructions = take_anyif(tostring(customDimensions["gen_ai.system_instructions"]), isnotempty(tostring(customDimensions["gen_ai.system_instructions"]))),
         ever_nested = max(iif(parent_is_tool == 1, 1, 0))
       by operation_name = name
-    | join kind=leftouter (chat_prompts) on operation_name
-    | extend system_instructions = coalesce(span_system_instructions, chat_system_instructions)
     | top 1000 by first_seen desc
   `
   const rows = await p.query(q, opts ?? {})
@@ -308,7 +289,6 @@ function rowToInventoryObservation(
   return {
     kind: isTool ? 'mcp_tool' : 'agent',
     name,
-    namespace: '',
     firstSeenMs: firstSeen,
     lastSeenMs: lastSeen,
     traceId: typeof row.sample_trace_id === 'string' ? row.sample_trace_id : undefined,

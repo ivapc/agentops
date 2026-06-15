@@ -5,6 +5,7 @@ import { Button } from '#/components/ui/button'
 import { Input } from '#/components/ui/input'
 import { Label } from '#/components/ui/label'
 import { ToggleGroup, ToggleGroupItem } from '#/components/ui/toggle-group'
+import { ThumbDownIcon, ThumbUpIcon } from '#/features/evaluation/components/score-value'
 import { upsertScoreConfig } from '#/features/evaluation/server/scores'
 import {
   defaultCategoryPolarity,
@@ -13,6 +14,7 @@ import {
   type ScoreDataType,
   type ScoreDirection,
 } from '#/lib/eval/evaluation'
+import { errMessage } from '#/lib/format'
 import { queryKeys } from '#/lib/query-keys'
 
 // Inline score_config create — keeps a dimension's vocab consistent across human + judge.
@@ -62,7 +64,7 @@ export function DimensionForm({ onCreated, onCancel }: { onCreated: (c: ScoreCon
       toast.success(`Dimension "${config.name}" created`)
       onCreated(config)
     },
-    onError: (e) => toast.error(e instanceof Error ? e.message : 'Could not create dimension'),
+    onError: (e) => toast.error(errMessage(e)),
   })
 
   return (
@@ -74,6 +76,7 @@ export function DimensionForm({ onCreated, onCancel }: { onCreated: (c: ScoreCon
           value={name}
           onChange={(e) => setName(e.target.value)}
           placeholder="tool_selection"
+          className="text-xs"
           autoFocus
         />
       </div>
@@ -96,7 +99,7 @@ export function DimensionForm({ onCreated, onCancel }: { onCreated: (c: ScoreCon
       {dataType === 'categorical' && (
         <div className="flex flex-col gap-1.5">
           <Label htmlFor="dim-cats">Categories (comma-separated)</Label>
-          <Input id="dim-cats" value={categories} onChange={(e) => setCategories(e.target.value)} />
+          <Input id="dim-cats" value={categories} onChange={(e) => setCategories(e.target.value)} className="text-xs" />
           {categories.trim() && parsedCategories.length === 0 && (
             <span className="text-xs text-destructive">Enter at least one category.</span>
           )}
@@ -113,13 +116,13 @@ export function DimensionForm({ onCreated, onCancel }: { onCreated: (c: ScoreCon
                     variant="outline"
                   >
                     <ToggleGroupItem value="good" aria-label="Pass">
-                      👍
+                      <ThumbUpIcon />
                     </ToggleGroupItem>
                     <ToggleGroupItem value="neutral" aria-label="Neutral">
                       –
                     </ToggleGroupItem>
                     <ToggleGroupItem value="bad" aria-label="Fail">
-                      👎
+                      <ThumbDownIcon />
                     </ToggleGroupItem>
                   </ToggleGroup>
                 </div>
@@ -138,7 +141,7 @@ export function DimensionForm({ onCreated, onCancel }: { onCreated: (c: ScoreCon
                 type="number"
                 value={minValue}
                 onChange={(e) => setMinValue(e.target.value)}
-                className="w-24"
+                className="w-24 text-xs"
               />
             </div>
             <div className="flex flex-col gap-1.5">
@@ -148,7 +151,7 @@ export function DimensionForm({ onCreated, onCancel }: { onCreated: (c: ScoreCon
                 type="number"
                 value={maxValue}
                 onChange={(e) => setMaxValue(e.target.value)}
-                className="w-24"
+                className="w-24 text-xs"
               />
             </div>
           </div>

@@ -1,6 +1,5 @@
-import { CheckmarkCircle02Icon, CopyLinkIcon, Delete02Icon, Edit02Icon, ReloadIcon } from '@hugeicons/core-free-icons'
-import { HugeiconsIcon } from '@hugeicons/react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { CircleCheck, Link2, RotateCw, SquarePen, Trash2 } from 'lucide-react'
 import { useState } from 'react'
 import { toast } from 'sonner'
 import { Markdown } from '#/components/markdown'
@@ -9,6 +8,7 @@ import { Badge } from '#/components/ui/badge'
 import { Button } from '#/components/ui/button'
 import {
   Dialog,
+  DialogClose,
   DialogContent,
   DialogDescription,
   DialogFooter,
@@ -171,7 +171,7 @@ export function NoteEditor({ targetKind, targetId, parentTraceId, parentSessionI
       {isResolved && (
         <div className="flex items-center gap-1.5">
           <Badge variant="outline" className="gap-1 text-muted-foreground">
-            <HugeiconsIcon icon={CheckmarkCircle02Icon} strokeWidth={2} />
+            <CircleCheck />
             Resolved
           </Badge>
           {note.resolvedAt && <RelativeTime ts={note.resolvedAt} className="text-[11px] text-muted-foreground" />}
@@ -194,7 +194,7 @@ export function NoteEditor({ targetKind, targetId, parentTraceId, parentSessionI
                 disabled={statusMutation.isPending}
                 onClick={toggleStatus}
               >
-                <HugeiconsIcon icon={isResolved ? ReloadIcon : CheckmarkCircle02Icon} strokeWidth={2} />
+                {isResolved ? <RotateCw /> : <CircleCheck />}
               </Button>
             </TooltipTrigger>
             <TooltipContent>{isResolved ? 'Reopen' : 'Resolve'}</TooltipContent>
@@ -202,7 +202,7 @@ export function NoteEditor({ targetKind, targetId, parentTraceId, parentSessionI
           <Tooltip>
             <TooltipTrigger asChild>
               <Button size="icon-sm" variant="ghost" aria-label="Copy link to note" onClick={copyLink}>
-                <HugeiconsIcon icon={CopyLinkIcon} strokeWidth={2} />
+                <Link2 />
               </Button>
             </TooltipTrigger>
             <TooltipContent>Copy link</TooltipContent>
@@ -218,7 +218,7 @@ export function NoteEditor({ targetKind, targetId, parentTraceId, parentSessionI
                   setEditing(true)
                 }}
               >
-                <HugeiconsIcon icon={Edit02Icon} strokeWidth={2} />
+                <SquarePen />
               </Button>
             </TooltipTrigger>
             <TooltipContent>Edit</TooltipContent>
@@ -232,7 +232,7 @@ export function NoteEditor({ targetKind, targetId, parentTraceId, parentSessionI
                 className="text-muted-foreground hover:text-destructive"
                 onClick={() => setDeleteOpen(true)}
               >
-                <HugeiconsIcon icon={Delete02Icon} strokeWidth={2} />
+                <Trash2 />
               </Button>
             </TooltipTrigger>
             <TooltipContent>Delete</TooltipContent>
@@ -247,9 +247,11 @@ export function NoteEditor({ targetKind, targetId, parentTraceId, parentSessionI
             <DialogDescription>The note will be removed. This can't be undone.</DialogDescription>
           </DialogHeader>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setDeleteOpen(false)} disabled={deleteMutation.isPending}>
-              Cancel
-            </Button>
+            <DialogClose asChild>
+              <Button variant="outline" disabled={deleteMutation.isPending}>
+                Cancel
+              </Button>
+            </DialogClose>
             <Button
               variant="destructive"
               onClick={() => deleteMutation.mutate(note.id)}

@@ -1,19 +1,19 @@
-import { ChevronDownIcon, ChevronRightIcon } from '@heroicons/react/16/solid'
 import {
-  ArrowPathRoundedSquareIcon,
-  CheckIcon,
-  ClipboardIcon,
-  CommandLineIcon,
-  CubeTransparentIcon,
-  ExclamationTriangleIcon,
-  InformationCircleIcon,
-  MagnifyingGlassIcon,
-  TableCellsIcon,
-  WrenchScrewdriverIcon,
-} from '@heroicons/react/24/outline'
+  Box,
+  Check,
+  ChevronDown,
+  ChevronRight,
+  Copy,
+  Info,
+  RefreshCw,
+  Search,
+  SquareTerminal,
+  Table as TableIcon,
+  TriangleAlert,
+  Wrench,
+} from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { JsonView } from '#/components/ai-elements/json-view'
-import { IconTabs } from '#/components/icon-tabs'
 import { Spinner } from '#/components/spinner'
 import { Badge } from '#/components/ui/badge'
 import { Button } from '#/components/ui/button'
@@ -30,11 +30,14 @@ import { useIsMobile } from '#/hooks/use-mobile'
 import { formatCost } from '#/lib/format'
 import { formatJson } from '#/lib/json'
 import type { Span } from '#/lib/spans'
+import { ACCENT } from '#/lib/tone'
 import { cn } from '#/lib/utils'
 import { AgUiPanel } from './agui'
 import { ContextTools } from './context'
-import { computeContextSegments, SEGMENT_COLORS } from './context-segments'
+import { ContextSegmentBar } from './context-segment-bar'
+import { computeContextSegments } from './context-segments'
 import { DetailPanel } from './detail-panel'
+import { IconTabs } from './icon-tabs'
 import { SessionLogsPanel } from './logs'
 import { displayFor, formatDuration } from './shared'
 import { SpanTreeList } from './tree'
@@ -42,12 +45,12 @@ import { SpanTreeList } from './tree'
 type InspectorTab = 'details' | 'tools' | 'agui' | 'turns' | 'logs' | 'attributes'
 
 const INSPECTOR_TABS = [
-  { id: 'details', label: 'Details', Icon: InformationCircleIcon },
-  { id: 'tools', label: 'Tools', Icon: WrenchScrewdriverIcon },
-  { id: 'agui', label: 'AG-UI', Icon: CubeTransparentIcon },
-  { id: 'turns', label: 'Turns', Icon: ArrowPathRoundedSquareIcon },
-  { id: 'logs', label: 'Logs', Icon: CommandLineIcon },
-  { id: 'attributes', label: 'Attributes', Icon: TableCellsIcon },
+  { id: 'details', label: 'Details', icon: Info },
+  { id: 'tools', label: 'Tools', icon: Wrench },
+  { id: 'agui', label: 'AG-UI', icon: Box },
+  { id: 'turns', label: 'Turns', icon: RefreshCw },
+  { id: 'logs', label: 'Logs', icon: SquareTerminal },
+  { id: 'attributes', label: 'Attributes', icon: TableIcon },
 ] as const
 
 export function InspectLayout({
@@ -80,7 +83,9 @@ export function InspectLayout({
         <section className="h-full overflow-hidden">
           <ScrollArea className="h-full">
             {loading && view.spans.length === 0 ? (
-              <div className="flex h-full items-center justify-center py-12 text-xs text-muted-foreground/70">
+              // Absolute against the ScrollArea root: Radix's viewport content
+              // wrapper has no height, so h-full centering collapses inside it.
+              <div className="absolute inset-0 flex items-center justify-center text-xs text-muted-foreground/70">
                 <Spinner />
               </div>
             ) : (
@@ -150,6 +155,7 @@ function SessionTools({ view, selectedSpan }: { view: InspectorView; selectedSpa
   // chat → just that chat span (per-turn registry; surfaces dynamic
   // mid-turn tool loading like load_tools(domain)). Otherwise → full session.
   const groups = useMemo(() => view.toolGroupsFor(selectedSpan), [view, selectedSpan])
+  const toolDefsTruncated = useMemo(() => view.toolDefsTruncatedFor(selectedSpan), [view, selectedSpan])
 
   let count = 0
   let tokens = 0
@@ -173,7 +179,7 @@ function SessionTools({ view, selectedSpan }: { view: InspectorView; selectedSpa
           {count} tool{count === 1 ? '' : 's'} · {tokens ? `${formatTokens(tokens)} tokens` : '—'}
         </span>
       </header>
-      <ContextTools groups={groups} />
+      <ContextTools groups={groups} truncated={toolDefsTruncated} />
     </div>
   )
 }
@@ -286,7 +292,7 @@ function SpanAttributesPanel({ selectedSpan }: { selectedSpan: Span | undefined 
       <div className="flex items-center gap-2">
         <InputGroup className="flex-1">
           <InputGroupAddon>
-            <MagnifyingGlassIcon />
+            <Search aria-hidden />
           </InputGroupAddon>
           <InputGroupInput value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Filter attributes…" />
         </InputGroup>
@@ -333,7 +339,7 @@ function AttrRow({ attrKey, value }: { attrKey: string; value: unknown }) {
 
   return (
     <TableRow className="group align-top">
-      <TableCell className="max-w-[14rem] truncate py-1.5 font-mono text-xs text-muted-foreground" title={attrKey}>
+      <TableCell className={`max-w-[14rem] truncate py-1.5 font-mono text-xs ${ACCENT.violet.ident}`} title={attrKey}>
         {attrKey}
       </TableCell>
       <TableCell className="whitespace-normal py-1.5 font-mono text-xs text-foreground">
@@ -357,7 +363,7 @@ function AttrRow({ attrKey, value }: { attrKey: string; value: unknown }) {
                 className="mt-1 text-muted-foreground hover:text-foreground"
                 onClick={() => setExpanded((x) => !x)}
               >
-                {expanded ? <ChevronDownIcon /> : <ChevronRightIcon />}
+                {expanded ? <ChevronDown aria-hidden /> : <ChevronRight aria-hidden />}
                 {expanded ? 'Collapse' : `Show (${formatted.length.toLocaleString()} chars)`}
               </Button>
             )}
@@ -374,7 +380,7 @@ function AttrRow({ attrKey, value }: { attrKey: string; value: unknown }) {
             title={copied ? 'Copied' : failed ? 'Copy failed — clipboard unavailable' : 'Copy value'}
             onClick={onCopy}
           >
-            {copied ? <CheckIcon /> : failed ? <ExclamationTriangleIcon /> : <ClipboardIcon />}
+            {copied ? <Check aria-hidden /> : failed ? <TriangleAlert aria-hidden /> : <Copy aria-hidden />}
           </Button>
         </div>
       </TableCell>
@@ -474,48 +480,16 @@ function ContextBreakdown({
   messagesTokens: number
   subagentTokens: number
 }) {
-  const [hovered, setHovered] = useState<string | null>(null)
   const segments = computeContextSegments({
     systemTokens,
     toolDefsTokens,
     messagesTokens,
     subagentTokens,
   })
-  const denom = segments.reduce((acc, s) => acc + s.tokens, 0) || 1
 
   return (
     <div className="mt-2">
-      <div className="flex h-1.5 w-full overflow-hidden rounded-full bg-muted">
-        {segments.map((s) =>
-          s.tokens > 0 ? (
-            <div
-              key={s.key}
-              className={`${SEGMENT_COLORS[s.key]} transition-opacity duration-75`}
-              style={{
-                width: `${(s.tokens / denom) * 100}%`,
-                opacity: hovered === null || hovered === s.key ? 1 : 0.3,
-              }}
-            />
-          ) : null,
-        )}
-      </div>
-      <ul className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
-        {segments.map((s) => (
-          <li
-            key={s.key}
-            onMouseEnter={() => setHovered(s.key)}
-            onMouseLeave={() => setHovered(null)}
-            className={`inline-flex cursor-default items-center gap-1.5 tabular-nums transition-opacity duration-75 ${
-              hovered !== null && hovered !== s.key ? 'opacity-40' : 'opacity-100'
-            }`}
-          >
-            <span className={`size-1.5 rounded-full ${SEGMENT_COLORS[s.key]}`} />
-            <span className="text-muted-foreground">{s.label}</span>
-            <span className="text-foreground">{s.tokens ? formatTokens(s.tokens) : '—'}</span>
-            {s.tokens > 0 && <span className="text-muted-foreground">· {s.pct}%</span>}
-          </li>
-        ))}
-      </ul>
+      <ContextSegmentBar segments={segments} hoverable showEmptyInLegend />
     </div>
   )
 }
@@ -553,7 +527,7 @@ function SessionTurnRow({
       <TableCell className="py-1.5 font-medium text-muted-foreground">T{index}</TableCell>
       <TableCell className="py-1.5">
         <div className="flex min-w-0 items-center gap-2">
-          <span className="min-w-0 truncate text-foreground">{modelLabel}</span>
+          <span className={`min-w-0 truncate font-mono ${ACCENT.violet.ident}`}>{modelLabel}</span>
           {errors > 0 && (
             <Badge variant="destructive" className="shrink-0">
               {errors} err

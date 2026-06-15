@@ -1,74 +1,28 @@
-import {
-  Clock01Icon,
-  Message01Icon,
-  Notification03Icon,
-  RepeatIcon,
-  Robot01Icon,
-  Unlink01Icon,
-  WebhookIcon,
-  Wrench01Icon,
-} from '@hugeicons/core-free-icons'
-import { HugeiconsIcon, type IconSvgElement } from '@hugeicons/react'
 import { Link } from '@tanstack/react-router'
 import type { ColumnDef } from '@tanstack/react-table'
 import { DataTableColumnHeader } from '#/components/data-table-column-header'
+import { KindBadge } from '#/components/kind-badge'
 import { RelativeTime } from '#/components/relative-time'
+import {
+  costColumn,
+  durationColumn,
+  scoreFlagColumn,
+  statusFilterColumn,
+  tokensColumn,
+  userColumn,
+} from '#/components/table-columns'
 import { Badge } from '#/components/ui/badge'
 import { ScoreSummaryBadge } from '#/features/evaluation'
-import { type ScoreSummary, scoreFlagFor, scoreFlagsFor } from '#/lib/eval/evaluation'
-import { formatCost, formatDuration, formatTokens, metricTone, truncateId } from '#/lib/format'
-import type { TraceCategory, TraceSummary } from '#/lib/telemetry'
-import { cn } from '#/lib/utils'
-
-const CATEGORY_LABELS: Record<TraceCategory, string> = {
-  chat: 'Chat',
-  'sub-agent': 'Sub-agent',
-  scheduled: 'Scheduled',
-  event: 'Event',
-  webhook: 'Webhook',
-  background: 'Background',
-  utility: 'Utility',
-  orphan: 'Orphan',
-}
-
-const CATEGORY_META: Record<TraceCategory, { icon: IconSvgElement; color: string }> = {
-  chat: { icon: Message01Icon, color: 'text-blue-500 dark:text-blue-400' },
-  'sub-agent': { icon: Robot01Icon, color: 'text-fuchsia-500 dark:text-fuchsia-400' },
-  scheduled: { icon: Clock01Icon, color: 'text-amber-500 dark:text-amber-400' },
-  event: { icon: Notification03Icon, color: 'text-orange-500 dark:text-orange-400' },
-  webhook: { icon: WebhookIcon, color: 'text-cyan-500 dark:text-cyan-400' },
-  background: { icon: RepeatIcon, color: 'text-violet-500 dark:text-violet-400' },
-  utility: { icon: Wrench01Icon, color: 'text-teal-500 dark:text-teal-400' },
-  orphan: { icon: Unlink01Icon, color: 'text-zinc-400 dark:text-zinc-500' },
-}
+import type { ScoreSummary } from '#/lib/eval/evaluation'
+import { truncateId } from '#/lib/format'
+import type { TraceSummary } from '#/lib/telemetry'
 
 // Columns are built per-render so the score badge/filter can close over the
 // trace→ScoreSummary map fetched alongside the list.
 export function makeTraceColumns(scoreSummaries: Record<string, ScoreSummary> = {}): ColumnDef<TraceSummary>[] {
   return [
-    {
-      accessorKey: 'status',
-      accessorFn: (s) => (s.hasError ? 'error' : 'ok'),
-      header: () => null,
-      cell: () => null,
-      filterFn: (row, _id, value: string[]) =>
-        Array.isArray(value) && value.includes(row.original.hasError ? 'error' : 'ok'),
-      enableSorting: false,
-      enableHiding: false,
-    },
-    {
-      id: 'scoreFlag',
-      accessorFn: (s) => scoreFlagFor(scoreSummaries[s.id]),
-      header: () => null,
-      cell: () => null,
-      filterFn: (row, _id, value: string[]) => {
-        if (!Array.isArray(value) || value.length === 0) return true
-        const flags = scoreFlagsFor(scoreSummaries[row.original.id])
-        return value.some((v) => (flags as string[]).includes(v))
-      },
-      enableSorting: false,
-      enableHiding: false,
-    },
+    statusFilterColumn<TraceSummary>(),
+    scoreFlagColumn<TraceSummary>((s) => s.id, scoreSummaries),
     {
       id: 'category',
       accessorFn: (s) => s.category ?? 'orphan',
@@ -131,19 +85,14 @@ export function makeTraceColumns(scoreSummaries: Record<string, ScoreSummary> = 
         const { llmPurpose, sessionId } = row.original
         return (
           <div className="flex items-center gap-1.5">
-            <Badge variant="outline" className="px-1.5 text-muted-foreground">
-              <HugeiconsIcon
-                icon={CATEGORY_META[cat].icon}
-                strokeWidth={1.5}
-                className={cn('size-3', CATEGORY_META[cat].color)}
-                aria-hidden
-              />
-              {CATEGORY_LABELS[cat]}
-            </Badge>
+            <KindBadge kind={cat} />
             {llmPurpose && (
-              <Badge variant="outline" className="whitespace-nowrap font-mono text-[10px]" title={llmPurpose}>
+              <span
+                className="whitespace-nowrap rounded bg-muted px-1.5 py-0.5 font-mono text-[10px] font-medium text-muted-foreground"
+                title={llmPurpose}
+              >
                 {llmPurpose}
-              </Badge>
+              </span>
             )}
             {cat === 'chat' && sessionId && (
               <Link
@@ -185,55 +134,14 @@ export function makeTraceColumns(scoreSummaries: Record<string, ScoreSummary> = 
       },
       enableSorting: false,
     },
-    {
-      accessorKey: 'totalTokens',
-      header: ({ column }) => <DataTableColumnHeader column={column} title="Tokens" className="justify-end" />,
-      cell: ({ row }) => <div className="text-right tabular-nums">{formatTokens(row.original.totalTokens)}</div>,
-    },
-    {
-      accessorKey: 'totalCostUsd',
-      header: ({ column }) => <DataTableColumnHeader column={column} title="Cost" className="justify-end" />,
-      cell: ({ row }) => {
-        const value = row.original.totalCostUsd ?? 0
-        return <div className={`text-right tabular-nums ${metricTone('cost', value)}`}>{formatCost(value)}</div>
-      },
-    },
-    {
-      id: 'duration',
-      accessorFn: (s) => s.durationMs,
-      header: ({ column }) => <DataTableColumnHeader column={column} title="Duration" className="justify-end" />,
-      cell: ({ row }) => {
-        const ms = row.original.durationMs
-        return (
-          <div className={`flex items-center justify-end gap-1 tabular-nums ${metricTone('duration', ms)}`}>
-            <HugeiconsIcon icon={Clock01Icon} strokeWidth={2} className="size-3.5 opacity-80" />
-            {formatDuration(ms)}
-          </div>
-        )
-      },
-    },
+    tokensColumn<TraceSummary>(),
+    costColumn<TraceSummary>(),
+    durationColumn<TraceSummary>((s) => s.durationMs),
     {
       accessorKey: 'spanCount',
       header: ({ column }) => <DataTableColumnHeader column={column} title="Spans" className="justify-end" />,
       cell: ({ row }) => <div className="text-right tabular-nums">{row.original.spanCount}</div>,
     },
-    {
-      id: 'user',
-      accessorFn: (s) => s.userId ?? s.userName ?? '',
-      header: ({ column }) => <DataTableColumnHeader column={column} title="User" />,
-      cell: ({ row }) => {
-        const s = row.original
-        const primary = s.userId ?? '—'
-        const secondary = s.userName && s.userId ? s.userName : undefined
-        return (
-          <div className="flex min-w-0 items-center gap-1.5">
-            <span className="min-w-0 max-w-[140px] truncate">{primary}</span>
-            {secondary && (
-              <span className="max-w-[120px] shrink-0 truncate text-xs text-muted-foreground">{secondary}</span>
-            )}
-          </div>
-        )
-      },
-    },
+    userColumn<TraceSummary>(),
   ]
 }

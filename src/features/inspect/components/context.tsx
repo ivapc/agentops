@@ -1,6 +1,5 @@
-import { ArrowDown01Icon, ArrowUp01Icon } from '@hugeicons/core-free-icons'
-import { HugeiconsIcon } from '@hugeicons/react'
 import { useQuery } from '@tanstack/react-query'
+import { ChevronDown, ChevronUp } from 'lucide-react'
 import { useState } from 'react'
 import { JsonView } from '#/components/ai-elements/json-view'
 import { Badge } from '#/components/ui/badge'
@@ -8,15 +7,20 @@ import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from '#/components/u
 import type { ToolDef, ToolGroup } from '#/features/inspect/logic'
 import { formatPercent, formatTokens } from '#/lib/format'
 import type { JsonValue } from '#/lib/json'
+import { ACCENT } from '#/lib/tone'
 import { toolsCatalogQuery } from './tool-data'
 
-export function ContextTools({ groups }: { groups: ToolGroup[] }) {
+export function ContextTools({ groups, truncated }: { groups: ToolGroup[]; truncated?: boolean }) {
   if (groups.length === 0) {
     return (
       <Empty className="border-0">
         <EmptyHeader>
-          <EmptyTitle>No tool definitions</EmptyTitle>
-          <EmptyDescription>The chat spans didn't advertise any tools.</EmptyDescription>
+          <EmptyTitle>{truncated ? 'Tool definitions truncated' : 'No tool definitions'}</EmptyTitle>
+          <EmptyDescription>
+            {truncated
+              ? 'The tool-definitions attribute was too large to capture and got cut off, so the list is unavailable.'
+              : "The chat spans didn't advertise any tools."}
+          </EmptyDescription>
         </EmptyHeader>
       </Empty>
     )
@@ -117,7 +121,7 @@ export function ExpandableRow({
         className="flex w-full items-center gap-2 px-3 py-2 text-left transition-colors hover:bg-muted/50"
       >
         <div className="min-w-0 flex-1">
-          <div className="break-words font-mono text-foreground text-sm">{title}</div>
+          <div className={`break-words font-mono text-sm ${ACCENT.violet.ident}`}>{title}</div>
           {subtitle && <div className="mt-0.5 break-words text-xs text-muted-foreground">{subtitle}</div>}
         </div>
         {badge}
@@ -126,11 +130,11 @@ export function ExpandableRow({
             {formatTokens(tokens)} tok
           </Badge>
         )}
-        <HugeiconsIcon
-          icon={open ? ArrowUp01Icon : ArrowDown01Icon}
-          strokeWidth={2}
-          className="size-4 shrink-0 text-muted-foreground"
-        />
+        {open ? (
+          <ChevronUp className="size-4 shrink-0 text-muted-foreground" />
+        ) : (
+          <ChevronDown className="size-4 shrink-0 text-muted-foreground" />
+        )}
       </button>
       {open && <div className="border-border border-t bg-background px-3 py-2">{content()}</div>}
     </div>

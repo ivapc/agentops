@@ -1,6 +1,5 @@
-import { ComputerIcon, Moon01Icon, Sun01Icon } from '@hugeicons/core-free-icons'
-import { HugeiconsIcon } from '@hugeicons/react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { Monitor, Moon, Sun } from 'lucide-react'
 import { useTheme } from 'next-themes'
 import { useState } from 'react'
 import { providersQuery, setProviderFn } from '#/components/settings-data'
@@ -69,9 +68,9 @@ function Field({ label, hint, children }: { label: string; hint?: string; childr
 }
 
 const MODES = [
-  { value: 'light', label: 'Light', icon: Sun01Icon },
-  { value: 'dark', label: 'Dark', icon: Moon01Icon },
-  { value: 'system', label: 'System', icon: ComputerIcon },
+  { value: 'light', label: 'Light', icon: Sun },
+  { value: 'dark', label: 'Dark', icon: Moon },
+  { value: 'system', label: 'System', icon: Monitor },
 ] as const
 
 const COLORS: { value: ColorTheme; label: string; dot: string }[] = [
@@ -79,6 +78,7 @@ const COLORS: { value: ColorTheme; label: string; dot: string }[] = [
   { value: 'tremor', label: 'Tremor', dot: 'oklch(0.623 0.214 259.815)' },
   { value: 'neutral', label: 'Neutral', dot: 'oklch(0.205 0 0)' },
   { value: 'spotify', label: 'Spotify', dot: 'oklch(0.67 0.17 153.85)' },
+  { value: 'performative', label: 'Performative', dot: '#7c3aed' },
 ]
 
 const FONTS: { value: AppFont; label: string; family: string }[] = [
@@ -99,7 +99,7 @@ function AppearancePane() {
     <div className="space-y-6">
       <Field label="Theme" hint="Light, dark, or follow your system preference.">
         <div className="grid grid-cols-3 gap-2">
-          {MODES.map(({ value, label, icon }) => {
+          {MODES.map(({ value, label, icon: Icon }) => {
             const isActive = activeMode === value
             return (
               <button
@@ -112,7 +112,7 @@ function AppearancePane() {
                   isActive && TILE_ACTIVE,
                 )}
               >
-                <HugeiconsIcon icon={icon} className="size-4" />
+                <Icon className="size-4" />
                 <span>{label}</span>
               </button>
             )
@@ -184,7 +184,7 @@ function AccountPane() {
             value={value}
             onChange={(event) => setValue(event.target.value)}
             placeholder="you@example.com"
-            className="flex-1"
+            className="flex-1 text-xs"
           />
           <Button onClick={() => setStoredId(value)} disabled={!dirty}>
             Save
@@ -264,7 +264,7 @@ function ProviderRow() {
           if (next !== active && !mutation.isPending) mutation.mutate(next as ProviderId)
         }}
       >
-        <SelectTrigger className="w-full">
+        <SelectTrigger className="w-full text-xs">
           <SelectValue />
         </SelectTrigger>
         <SelectContent>

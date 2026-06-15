@@ -10,7 +10,7 @@ import {
   type SpanKind,
 } from '#/lib/spans'
 import { classifySpan, extractAgentName } from '#/lib/spans/classify-span'
-import { ooCoalesceAs, ooCol, ooColumns } from './conventions'
+import { ooCoalesceAs, ooCol, ooColumns, pickCanonical } from './conventions'
 import {
   aggregateSessions,
   buildLogRecord,
@@ -49,6 +49,8 @@ export interface OpenObserveConfig {
 const DEFAULT_LIST_LIMIT = 50
 // Last 30 days — OO scans local Parquet, cost ~free.
 const DEFAULT_WINDOW_US = 30 * 24 * 60 * 60 * 1_000_000
+// Bound stalled scans (else an infinite spinner with no error).
+const FETCH_TIMEOUT_MS = 120_000
 
 // OO-specific column quirks: alternate `_o2_*` forms exist when an attribute
 // collided with a reserved name at ingest. Not OTel attributes — kept here
@@ -102,6 +104,7 @@ export function createOpenObserveProvider(cfg: OpenObserveConfig): OpenObservePr
     if (schemaCache && Date.now() - schemaCache.at < SCHEMA_TTL_MS) return schemaCache.cols
     const resp = await fetch(`${cfg.baseUrl}/api/${cfg.org}/streams/${cfg.stream}/schema?type=traces`, {
       headers: { Authorization: `Basic ${auth}` },
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
     })
     const cols = new Set<string>()
     if (resp.ok) {
@@ -129,6 +132,7 @@ export function createOpenObserveProvider(cfg: OpenObserveConfig): OpenObservePr
       method: 'POST',
       headers: { Authorization: `Basic ${auth}`, 'Content-Type': 'application/json' },
       body,
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
     })
     if (!resp.ok) {
       const text = await resp.text()
@@ -164,9 +168,9 @@ export function createOpenObserveProvider(cfg: OpenObserveConfig): OpenObservePr
 
     getKnownColumns,
 
-    async getTrace(traceId, opts) {
+    async getTrace(traceId) {
       if (!/^[A-Za-z0-9_-]+$/.test(traceId)) return null
-      const { fromUs, toUs } = window(opts)
+      const { fromUs, toUs } = window(undefined)
       let sql = `SELECT * FROM "${cfg.stream}" WHERE trace_id='${traceId}'`
       let hits = await search(sql, fromUs, toUs)
       // If no results, the id might be a span_id (from sub-agent or purpose-span rows).
@@ -203,8 +207,6 @@ export function createOpenObserveProvider(cfg: OpenObserveConfig): OpenObservePr
         return `
         SELECT
           trace_id,
-          span_id,
-          reference_parent_span_id,
           operation_name,
           ${ooCoalesceAs('sessionId', 'ag_ui_thread_id', { known })},
           ${ooCoalesceAs('sessionTitle', 'ag_ui_thread_title', { known })},
@@ -226,6 +228,7 @@ export function createOpenObserveProvider(cfg: OpenObserveConfig): OpenObservePr
         WHERE (
           operation_name LIKE 'invoke_agent %'
           OR gen_ai_operation_name = 'chat'
+          OR (span_status = 'ERROR' AND (gen_ai_operation_name IS NOT NULL OR operation_name LIKE 'execute_tool %'))
           ${sessionCols.map((c) => `OR ${c} != ''`).join('\n          ')}
         )
         ${whereIdentity(opts, known)}
@@ -261,16 +264,9 @@ export function createOpenObserveProvider(cfg: OpenObserveConfig): OpenObservePr
         propagateInheritedAttrs(trSpans)
       }
       const source: 'attribute' | 'trace' = spans.some((s) => s.sessionSource === 'attribute') ? 'attribute' : 'trace'
-      const titleCols = ooColumns('sessionTitle')
       let title: string | undefined
       for (const h of spanHits) {
-        for (const col of titleCols) {
-          const v = h[col]
-          if (typeof v === 'string' && v.trim()) {
-            title = v.trim()
-            break
-          }
-        }
+        title = pickCanonical(h, 'sessionTitle')
         if (title) break
       }
       return { sessionId, source, traceIds, spans, title }
@@ -286,6 +282,17 @@ export function createOpenObserveProvider(cfg: OpenObserveConfig): OpenObservePr
         const costCols = ooColumns('costUsd', { known, extras: LLM_COST_EXTRAS })
         const uidCols = ooColumns('userId', { known })
         const unameCols = ooColumns('userName', { known })
+        const agentExpr = `MAX(CASE WHEN operation_name LIKE 'invoke_agent %' THEN operation_name END)`
+        const rootTriggerExpr = `COALESCE(
+            MAX(CASE WHEN reference_parent_span_id IS NULL THEN ${ooCol('triggerType', known)} END),
+            MAX(CASE WHEN operation_name LIKE 'invoke_agent %' AND ${ooCol('triggerType', known)} IS NOT NULL THEN ${ooCol('triggerType', known)} END)
+          )`
+        const serviceWhere = opts?.serviceName ? `AND service_name = ${sqlString(opts.serviceName)}` : ''
+        const having: string[] = []
+        if (opts?.triggerTypes?.length) {
+          having.push(`${rootTriggerExpr} IN (${opts.triggerTypes.map(sqlString).join(', ')})`)
+        }
+        if (opts?.agentName) having.push(`${agentExpr} LIKE ${sqlString(`invoke_agent ${opts.agentName}%`)}`)
         return `
         SELECT
           trace_id,
@@ -294,17 +301,14 @@ export function createOpenObserveProvider(cfg: OpenObserveConfig): OpenObservePr
           COUNT(*)        AS span_count,
           SUM(CASE WHEN gen_ai_operation_name = 'chat' THEN ${chatTokensExpr(known)} ELSE 0 END) AS total_tokens,
           ${sumChatOf(costCols)} AS total_cost,
-          MAX(CASE WHEN operation_name LIKE 'invoke_agent %' THEN operation_name END) AS sample_agent,
+          ${agentExpr} AS sample_agent,
           MAX(CASE WHEN span_status = 'ERROR' AND (gen_ai_operation_name IS NOT NULL OR operation_name LIKE 'invoke_agent %' OR operation_name LIKE 'execute_tool %') THEN 1 ELSE 0 END) AS has_error,
           ${maxOf(sessionCols)} AS session_id,
           MAX(service_name)    AS service_name,
           MAX(CASE WHEN operation_name LIKE 'invoke_agent %' THEN 1 ELSE 0 END) AS has_invoke_agent,
           MAX(CASE WHEN gen_ai_operation_name = 'chat' THEN 1 ELSE 0 END) AS has_chat,
           MAX(CASE WHEN reference_parent_span_id IS NULL THEN ${ooCol('llmPurpose', known)} END) AS root_llm_purpose,
-          COALESCE(
-            MAX(CASE WHEN reference_parent_span_id IS NULL THEN ${ooCol('triggerType', known)} END),
-            MAX(CASE WHEN operation_name LIKE 'invoke_agent %' AND ${ooCol('triggerType', known)} IS NOT NULL THEN ${ooCol('triggerType', known)} END)
-          ) AS root_trigger_type,
+          ${rootTriggerExpr} AS root_trigger_type,
           COALESCE(
             MAX(CASE WHEN reference_parent_span_id IS NULL THEN ${ooCol('execution', known)} END),
             MAX(CASE WHEN operation_name LIKE 'invoke_agent %' AND ${ooCol('execution', known)} IS NOT NULL THEN ${ooCol('execution', known)} END)
@@ -324,7 +328,9 @@ export function createOpenObserveProvider(cfg: OpenObserveConfig): OpenObservePr
            OR ${ooCol('triggerType', known)} IS NOT NULL
            OR ${ooCol('llmPurpose', known)} IS NOT NULL)
           AND operation_name NOT LIKE 'tools/%'
+          ${serviceWhere}
         GROUP BY trace_id
+        ${having.length ? `HAVING ${having.join(' AND ')}` : ''}
         ORDER BY first_seen DESC
         LIMIT ${limit}
       `

@@ -1,20 +1,20 @@
-import { ChatBubbleLeftRightIcon, QueueListIcon } from '@heroicons/react/24/outline'
-import { IconBraces } from '@tabler/icons-react'
+import { Braces, ChartNoAxesGantt, List, MessagesSquare } from 'lucide-react'
 import type { ReactNode } from 'react'
 import {
   type AutoRefreshInterval,
   AutoRefreshSelect,
   INSPECT_AUTO_REFRESH_OPTIONS,
 } from '#/components/auto-refresh-select'
-import { IconTabs } from '#/components/icon-tabs'
 import { Toggle } from '#/components/ui/toggle'
 import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip'
+import { IconTabs } from './icon-tabs'
 
-export type InspectView = 'spans' | 'conversation'
+export type InspectView = 'spans' | 'conversation' | 'timeline'
 
 const INSPECT_VIEW_TABS = [
-  { id: 'spans', label: 'Spans', Icon: QueueListIcon },
-  { id: 'conversation', label: 'Conversation', Icon: ChatBubbleLeftRightIcon },
+  { id: 'spans', label: 'Spans', icon: List },
+  { id: 'conversation', label: 'Conversation', icon: MessagesSquare },
+  { id: 'timeline', label: 'Timeline', icon: ChartNoAxesGantt },
 ] as const
 
 interface InspectViewBarProps {
@@ -64,7 +64,7 @@ export function InspectViewBar({
                 onPressedChange={onToggleRawAll}
                 aria-label="Toggle raw spans on every trace"
               >
-                <IconBraces />
+                <Braces aria-hidden />
               </Toggle>
             </TooltipTrigger>
             <TooltipContent>

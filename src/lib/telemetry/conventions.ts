@@ -31,6 +31,7 @@ const ATTRS = {
     'llm.usage.cache_read_tokens',
   ],
   llmInput: ['gen_ai.input.messages', 'llm.input'],
+  llmOutput: ['gen_ai.output.messages', 'llm.output'],
   // OTel-stable as of Q1 2026. CUSTOM_LLM_PURPOSE_FIELD plumbing is gone —
   // producers must conform to this name.
   llmPurpose: ['gen_ai.operation.purpose'],
@@ -62,7 +63,9 @@ export function attrKeysFor(field: CanonicalField): readonly string[] {
 export function pickCanonical(attrs: Record<string, unknown>, field: CanonicalField): string | undefined {
   for (const k of attrKeysFor(field)) {
     const v = attrs[k]
-    if (typeof v === 'string' && v.length > 0) return v
+    if (typeof v !== 'string') continue
+    const t = v.trim()
+    if (t) return t
   }
   return undefined
 }

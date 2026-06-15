@@ -1,68 +1,41 @@
-import { Add01Icon, TestTubeIcon } from '@hugeicons/core-free-icons'
-import { HugeiconsIcon } from '@hugeicons/react'
 import { queryOptions, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { createFileRoute, Link } from '@tanstack/react-router'
-import { useEffect, useState } from 'react'
+import { Plus, TestTube } from 'lucide-react'
+import { useState } from 'react'
 import { toast } from 'sonner'
 import { Page } from '#/components/page'
 import { RelativeTime } from '#/components/relative-time'
+import { StatusDot } from '#/components/status-dot'
 import { Button } from '#/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '#/components/ui/card'
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from '#/components/ui/dialog'
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '#/components/ui/empty'
-import { Input } from '#/components/ui/input'
-import { Label } from '#/components/ui/label'
 import { ProgressCircle } from '#/components/ui/progress-circle'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '#/components/ui/select'
 import { Skeleton } from '#/components/ui/skeleton'
 import { Switch } from '#/components/ui/switch'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '#/components/ui/table'
-import { Textarea } from '#/components/ui/textarea'
-import { ToggleGroup, ToggleGroupItem } from '#/components/ui/toggle-group'
-import { ModelSelect } from '#/features/evaluation/components/model-select'
-import {
-  getJudgeDefaults,
-  listEvalDefinitions,
-  setEvalDefinitionLive,
-  upsertEvalDefinition,
-} from '#/features/evaluation/server/evals'
+import { definitionsQuery, judgeDefaultsQuery, scoreConfigsQuery } from '#/features/evaluation'
+import { EvaluatorFormDialog } from '#/features/evaluation/components/evaluator-form-dialog'
+import { setEvalDefinitionLive } from '#/features/evaluation/server/evals'
 import type { JudgeDefaults } from '#/features/evaluation/server/judge'
 import {
   getOnlineEvalStats,
   getScoreRollup,
-  listScoreConfigs,
   type OnlineEvalStat,
   type ScoreRollupRow,
 } from '#/features/evaluation/server/scores'
 import {
+  DATA_TYPE_LABEL,
   type EvalDefinition,
-  type EvalScope,
-  SCORE_DATA_TYPES,
   SCORE_SOURCE_ICON,
   SCORE_SOURCE_LABEL,
   SCORE_TONE_CLASS,
-  type ScoreDataType,
   type ScoreSource,
   type ScoreTone,
 } from '#/lib/eval/evaluation'
-import { JUDGE_TEMPLATES } from '#/lib/eval/judge-templates'
 import { errMessage, formatCost } from '#/lib/format'
 import { queryKeys, STALE_LIVE_MS, STALE_TELEMETRY_MS } from '#/lib/query-keys'
+import { ACCENT } from '#/lib/tone'
 import { cn } from '#/lib/utils'
-
-const definitionsQuery = queryOptions({
-  queryKey: queryKeys.evals.definitions(),
-  queryFn: () => listEvalDefinitions({ data: {} }),
-  staleTime: STALE_TELEMETRY_MS,
-})
 
 const rollupQuery = queryOptions({
   queryKey: queryKeys.scores.rollup('7d'),
@@ -73,22 +46,10 @@ const rollupQuery = queryOptions({
   staleTime: STALE_TELEMETRY_MS,
 })
 
-const judgeDefaultsQuery = queryOptions({
-  queryKey: queryKeys.evals.judgeDefaults(),
-  queryFn: () => getJudgeDefaults(),
-  staleTime: STALE_TELEMETRY_MS,
-})
-
 const onlineStatsQuery = queryOptions({
   queryKey: queryKeys.evals.onlineStats(),
   queryFn: () => getOnlineEvalStats(),
   staleTime: STALE_LIVE_MS,
-})
-
-const configsQuery = queryOptions({
-  queryKey: queryKeys.scores.configs(),
-  queryFn: () => listScoreConfigs(),
-  staleTime: STALE_TELEMETRY_MS,
 })
 
 const SOURCE_ORDER: ScoreSource[] = ['human', 'llm', 'code']
@@ -101,19 +62,6 @@ export const Route = createFileRoute('/evals/')({
     ]),
   component: EvalsPage,
 })
-
-const SCOPE_OPTIONS: { label: string; value: EvalScope }[] = [
-  { label: 'Span', value: 'span' },
-  { label: 'Trace', value: 'trace' },
-  { label: 'Session', value: 'session' },
-]
-
-const DATA_TYPE_LABEL: Record<ScoreDataType, string> = {
-  numeric: 'Numeric',
-  categorical: 'Categorical',
-  boolean: 'Boolean',
-  text: 'Text',
-}
 
 function passRateTone(rate: number): ScoreTone {
   if (rate >= 0.8) return 'good'
@@ -130,7 +78,7 @@ function EvalsPage() {
   const { data: rollup = [] } = useQuery(rollupQuery)
   const { data: judgeDefaults } = useQuery(judgeDefaultsQuery)
   const { data: onlineStats = {} } = useQuery(onlineStatsQuery)
-  const { data: configs = [] } = useQuery(configsQuery)
+  const { data: configs = [] } = useQuery(scoreConfigsQuery)
 
   const [setupOpen, setSetupOpen] = useState(false)
 
@@ -142,13 +90,13 @@ function EvalsPage() {
     <Page
       title="Evals"
       actions={
-        <SetupEvaluatorDialog
+        <EvaluatorFormDialog
           open={setupOpen}
           onOpenChange={setSetupOpen}
           defaultModel={judgeDefaults?.model ?? ''}
           trigger={
             <Button size="sm">
-              <HugeiconsIcon icon={Add01Icon} strokeWidth={2} data-icon="inline-start" />
+              <Plus data-icon="inline-start" />
               Set up evaluator
             </Button>
           }
@@ -265,13 +213,16 @@ function EvaluatorsTable({
                 >
                   <TableCell className="py-2.5">
                     <div className="flex flex-col gap-0.5">
-                      <Link
-                        to="/evals/$evalId"
-                        params={{ evalId: String(def.id) }}
-                        className="font-medium text-foreground hover:underline"
-                      >
-                        {def.name}
-                      </Link>
+                      <div className="flex items-center gap-1.5">
+                        <Link
+                          to="/evals/$evalId"
+                          params={{ evalId: String(def.id) }}
+                          className="font-medium text-foreground hover:underline"
+                        >
+                          {def.name}
+                        </Link>
+                        {isLive(def) && <StatusDot pulse className="text-success" />}
+                      </div>
                       <span className="text-xs capitalize text-muted-foreground">
                         {def.scope} · {DATA_TYPE_LABEL[def.dataType]}
                       </span>
@@ -287,7 +238,7 @@ function EvaluatorsTable({
                     {stat?.costUsd ? formatCost(stat.costUsd) : '—'}
                   </TableCell>
                   <TableCell>
-                    <span className="font-mono text-xs text-foreground">{def.model || '—'}</span>
+                    <span className={`font-mono text-xs ${ACCENT.violet.ident}`}>{def.model || '—'}</span>
                   </TableCell>
                   <TableCell className="text-muted-foreground">
                     <RelativeTime ts={def.updatedAt} />
@@ -326,15 +277,20 @@ function JudgeStatus({ judge }: { judge: JudgeDefaults }) {
   if (!judge.configured) {
     return (
       <p className="text-xs text-muted-foreground">
-        No judge model configured. Set <span className="font-mono text-foreground">OPENAI_API_KEY</span> or{' '}
-        <span className="font-mono text-foreground">ANTHROPIC_API_KEY</span> to run judges.
+        No judge model configured. Set <span className="font-mono text-foreground">OPENAI_API_KEY</span>,{' '}
+        <span className="font-mono text-foreground">ANTHROPIC_API_KEY</span>, or{' '}
+        <span className="font-mono text-foreground">AZURE_OPENAI_API_KEY</span> to run judges.
       </p>
     )
   }
-  const keys = [judge.hasOpenAIKey && 'OpenAI', judge.hasAnthropicKey && 'Anthropic'].filter(Boolean) as string[]
+  const keys = [
+    judge.hasOpenAIKey && 'OpenAI',
+    judge.hasAnthropicKey && 'Anthropic',
+    judge.hasAzureKey && 'Azure OpenAI',
+  ].filter(Boolean) as string[]
   return (
     <p className="text-xs text-muted-foreground">
-      Judge: <span className="font-mono text-foreground">{judge.model}</span>
+      Judge: <span className={`font-mono ${ACCENT.violet.ident}`}>{judge.model}</span>
       {keys.length > 0 && <> · {keys.join(', ')} ready</>}
     </p>
   )
@@ -368,195 +324,15 @@ function EvaluatorsEmpty({ onSetup }: { onSetup: () => void }) {
     <Empty>
       <EmptyHeader>
         <EmptyMedia variant="icon">
-          <HugeiconsIcon icon={TestTubeIcon} />
+          <TestTube />
         </EmptyMedia>
         <EmptyTitle>No evaluators yet</EmptyTitle>
         <EmptyDescription>Set up an LLM-judge or code evaluator to start scoring your traces.</EmptyDescription>
       </EmptyHeader>
       <Button size="sm" onClick={onSetup}>
-        <HugeiconsIcon icon={Add01Icon} strokeWidth={2} data-icon="inline-start" />
+        <Plus data-icon="inline-start" />
         Set up evaluator
       </Button>
     </Empty>
-  )
-}
-
-function SetupEvaluatorDialog({
-  open,
-  onOpenChange,
-  defaultModel,
-  trigger,
-}: {
-  open: boolean
-  onOpenChange: (open: boolean) => void
-  defaultModel: string
-  trigger: React.ReactNode
-}) {
-  const queryClient = useQueryClient()
-  const [name, setName] = useState('')
-  const [scope, setScope] = useState<EvalScope>('trace')
-  const [dataType, setDataType] = useState<ScoreDataType>('boolean')
-  const [judgePrompt, setJudgePrompt] = useState('')
-  const [model, setModel] = useState(defaultModel)
-
-  // Seed the model field with the resolved judge default once it loads.
-  useEffect(() => {
-    if (open) setModel((prev) => prev || defaultModel)
-  }, [open, defaultModel])
-
-  const reset = () => {
-    setName('')
-    setScope('trace')
-    setDataType('boolean')
-    setJudgePrompt('')
-    setModel(defaultModel)
-  }
-
-  const applyTemplate = (key: string) => {
-    const t = JUDGE_TEMPLATES.find((x) => x.key === key)
-    if (!t) return
-    setName(t.key)
-    setScope(t.scope)
-    setDataType(t.dataType)
-    setJudgePrompt(t.judgePrompt)
-  }
-
-  const mutation = useMutation({
-    mutationFn: () =>
-      upsertEvalDefinition({
-        data: {
-          name: name.trim(),
-          scope,
-          dataType,
-          source: 'llm',
-          mode: 'offline',
-          judgePrompt: judgePrompt.trim() || null,
-          model: model.trim() || undefined,
-        },
-      }),
-    onSuccess: async (def) => {
-      await queryClient.invalidateQueries({ queryKey: queryKeys.evals.definitions() })
-      toast.success(`Evaluator "${def.name}" created`)
-      reset()
-      onOpenChange(false)
-    },
-    onError: (err) => toast.error(errMessage(err)),
-  })
-
-  const canSubmit = name.trim().length > 0 && !mutation.isPending
-
-  return (
-    <Dialog
-      open={open}
-      onOpenChange={(value) => {
-        onOpenChange(value)
-        if (!value) reset()
-      }}
-    >
-      <DialogTrigger asChild>{trigger}</DialogTrigger>
-      <DialogContent className="sm:max-w-lg">
-        <DialogHeader>
-          <DialogTitle>Set up evaluator</DialogTitle>
-          <DialogDescription>
-            Define an LLM-judge that scores spans, traces, or sessions on a dimension. Flip it Live from the list to
-            score production traffic.
-          </DialogDescription>
-        </DialogHeader>
-        <form
-          className="flex flex-col gap-4"
-          onSubmit={(e) => {
-            e.preventDefault()
-            if (canSubmit) mutation.mutate()
-          }}
-        >
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="evaluator-template">Start from a template</Label>
-            <Select onValueChange={applyTemplate}>
-              <SelectTrigger id="evaluator-template">
-                <SelectValue placeholder="Optional — prefill from a known judge" />
-              </SelectTrigger>
-              <SelectContent>
-                {JUDGE_TEMPLATES.map((t) => (
-                  <SelectItem key={t.key} value={t.key}>
-                    {t.label} — {t.description}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="evaluator-name">Name</Label>
-            <Input
-              id="evaluator-name"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="e.g. helpfulness"
-              autoFocus
-            />
-          </div>
-
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <div className="flex flex-col gap-1.5">
-              <Label>Scope</Label>
-              <ToggleGroup
-                type="single"
-                variant="outline"
-                size="sm"
-                spacing={0}
-                value={scope}
-                onValueChange={(v) => v && setScope(v as EvalScope)}
-              >
-                {SCOPE_OPTIONS.map((o) => (
-                  <ToggleGroupItem key={o.value} value={o.value}>
-                    {o.label}
-                  </ToggleGroupItem>
-                ))}
-              </ToggleGroup>
-            </div>
-            <div className="flex flex-col gap-1.5">
-              <Label htmlFor="evaluator-data-type">Data type</Label>
-              <Select value={dataType} onValueChange={(v) => setDataType(v as ScoreDataType)}>
-                <SelectTrigger id="evaluator-data-type">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {SCORE_DATA_TYPES.map((dt) => (
-                    <SelectItem key={dt} value={dt}>
-                      {DATA_TYPE_LABEL[dt]}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="evaluator-model">Model</Label>
-            <ModelSelect id="evaluator-model" value={model} onChange={setModel} />
-          </div>
-
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="evaluator-judge-prompt">Judge prompt</Label>
-            <Textarea
-              id="evaluator-judge-prompt"
-              value={judgePrompt}
-              onChange={(e) => setJudgePrompt(e.target.value)}
-              placeholder="Instructions for the judge. Reference the target's fields and the expected output."
-              rows={5}
-            />
-          </div>
-
-          <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
-              Cancel
-            </Button>
-            <Button type="submit" disabled={!canSubmit}>
-              {mutation.isPending ? 'Creating…' : 'Create evaluator'}
-            </Button>
-          </DialogFooter>
-        </form>
-      </DialogContent>
-    </Dialog>
   )
 }

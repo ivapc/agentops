@@ -281,11 +281,9 @@ export async function fetchInventory(
   // Scope to a single deployment env when LOUPE_ENV is set (placeholder until producers emit deployment.environment).
   const env = process.env.LOUPE_ENV?.trim()
   const envFilter = (col: string) => (env ? ` AND ${col} = '${env.replace(/'/g, "''")}'` : '')
-  // Agents also capture prompt + description, and a nested flag: ever_nested=1
-  // means at least one invocation was a sub-agent (parent is an execute_tool
-  // span) — a utility agent can run both under execute_tool and under an internal
-  // orchestration span, and "ever nested" is what separates it from the top-level
-  // orchestrator. Self-join the parent span — DataFusion rejects IN(subquery) inside CASE.
+  // ever_nested=1: invoked under execute_tool at least once (a utility agent can
+  // run both nested and top-level). Self-join the parent — DataFusion rejects
+  // IN(subquery) inside CASE.
   const sql = isTool
     ? `
     SELECT
@@ -324,7 +322,8 @@ function hitToInventoryObservation(
   h: Record<string, unknown>,
 ): InventoryObservation | null {
   const operationName = String(h.operation_name ?? '')
-  const name = kind === 'new_tool' ? extractToolName(operationName) : extractAgentName(operationName)
+  const isTool = kind === 'new_tool'
+  const name = isTool ? extractToolName(operationName) : extractAgentName(operationName)
   if (!name) return null
   const firstSeenNs = Number(h.first_seen ?? 0)
   const lastSeenNs = Number(h.last_seen ?? firstSeenNs)
@@ -333,15 +332,14 @@ function hitToInventoryObservation(
   )
   const description = typeof h.description === 'string' && h.description ? h.description : undefined
   return {
-    kind: kind === 'new_tool' ? 'mcp_tool' : 'agent',
+    kind: isTool ? 'mcp_tool' : 'agent',
     name,
-    namespace: '',
     firstSeenMs: Math.floor(firstSeenNs / 1_000_000),
     lastSeenMs: Math.floor(lastSeenNs / 1_000_000),
     traceId: typeof h.sample_trace_id === 'string' ? h.sample_trace_id : undefined,
     ...(description ? { description } : {}),
     ...(systemPrompt ? { systemPrompt } : {}),
-    ...(kind === 'new_tool' ? {} : { nested: Number(h.ever_nested ?? 0) === 1 }),
+    ...(isTool ? {} : { nested: Number(h.ever_nested ?? 0) === 1 }),
   }
 }
 

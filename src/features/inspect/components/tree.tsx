@@ -1,15 +1,13 @@
-import { ChevronDownIcon, ChevronRightIcon } from '@heroicons/react/16/solid'
-import { Clock01Icon } from '@hugeicons/core-free-icons'
-import { HugeiconsIcon } from '@hugeicons/react'
-import { IconBraces } from '@tabler/icons-react'
+import { Braces, ChevronDown, ChevronRight, Clock } from 'lucide-react'
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip'
 import { type InspectorView, isCollapsibleInfra, isToolLike, spanHasError } from '#/features/inspect/logic'
 import type { Span } from '#/lib/spans'
+import { ACCENT } from '#/lib/tone'
 import { cn } from '#/lib/utils'
 import { displayFor, fmtNum, formatDuration } from './shared'
 
-interface Row {
+export interface Row {
   span: Span
   depth: number
   // One entry per ancestor-rail column to the left of the row's own elbow.
@@ -19,7 +17,6 @@ interface Row {
   childCount: number
   isCollapsed: boolean
   subtreeTokens: number
-  subtreeCost: number
   isParallel: boolean
   // Input token delta vs the previous chat sibling in the same parent scope.
   // Non-zero only on chat spans where context grew significantly between calls.
@@ -31,14 +28,14 @@ interface Row {
 const INDENT = 22
 const HANDLE = 16
 const LEAF_DOT = 7
-const TREE_LINE = 'bg-border/60'
+const TREE_LINE = 'bg-border'
 // Normal completions — don't surface these on the row, they're just noise.
 const NORMAL_FINISH = new Set(['stop', 'end_turn', 'complete', 'end', 'eos'])
 
 // All rails, elbow, and indicator share this single x-axis so nothing can drift.
 const railX = (depth: number) => depth * INDENT + INDENT / 2
 
-function buildRows(view: InspectorView, collapsedIds: Set<string>, rawRoots: Set<string>): Row[] {
+export function buildRows(view: InspectorView, collapsedIds: Set<string>, rawRoots: Set<string>): Row[] {
   // Reuse the shared parent index; freshly sort each sibling list once.
   const byParent = new Map<string | null, Span[]>()
   for (const [pid, kids] of view.childrenByParent) {
@@ -69,21 +66,17 @@ function buildRows(view: InspectorView, collapsedIds: Set<string>, rawRoots: Set
 
   // Aggregation walks the full byParent tree (not visibleChildren) so totals
   // are invariant to which traces have raw on — otherwise the same span would
-  // get different tokens/cost depending on which root it was viewed from.
-  const aggCache = new Map<string, { tokens: number; cost: number }>()
-  const agg = (span: Span): { tokens: number; cost: number } => {
+  // get different tokens depending on which root it was viewed from.
+  const aggCache = new Map<string, number>()
+  const agg = (span: Span): number => {
     const cached = aggCache.get(span.id)
-    if (cached) return cached
+    if (cached != null) return cached
     let tokens = span.tokens ?? 0
-    let cost = span.costUsd ?? 0
     for (const child of byParent.get(span.id) ?? []) {
-      const sub = agg(child)
-      tokens += sub.tokens
-      cost += sub.cost
+      tokens += agg(child)
     }
-    const result = { tokens, cost }
-    aggCache.set(span.id, result)
-    return result
+    aggCache.set(span.id, tokens)
+    return tokens
   }
 
   const rows: Row[] = []
@@ -117,7 +110,7 @@ function buildRows(view: InspectorView, collapsedIds: Set<string>, rawRoots: Set
     let prevChatInputTokens: number | null = null
     siblings.forEach((span, i) => {
       const isLast = i === siblings.length - 1
-      const totals = agg(span)
+      const subtreeTokens = agg(span)
       const effectiveRootId = rootId ?? span.id
       const children = collect(span.id, effectiveRootId)
       const isChat = span.operation === 'chat'
@@ -135,8 +128,7 @@ function buildRows(view: InspectorView, collapsedIds: Set<string>, rawRoots: Set
         isLastChild: isLast,
         childCount: children.length,
         isCollapsed: collapsedIds.has(span.id),
-        subtreeTokens: totals.tokens,
-        subtreeCost: totals.cost,
+        subtreeTokens,
         isParallel: parallelIds.has(span.id),
         ctxDelta,
         rootId: effectiveRootId,
@@ -228,7 +220,9 @@ export function SpanTreeList({
 
   if (rows.length === 0) {
     return (
-      <div className="flex h-full items-center justify-center px-3 text-center text-xs text-muted-foreground/70">
+      // Absolute against the ScrollArea root: Radix's viewport content wrapper
+      // has no height, so h-full centering collapses inside it.
+      <div className="absolute inset-0 flex items-center justify-center px-3 text-center text-xs text-muted-foreground/70">
         No spans in this session.
       </div>
     )
@@ -278,7 +272,6 @@ function rowPropsEqual(a: SpanTreeRowProps, b: SpanTreeRowProps): boolean {
     ra.childCount !== rb.childCount ||
     ra.isCollapsed !== rb.isCollapsed ||
     ra.subtreeTokens !== rb.subtreeTokens ||
-    ra.subtreeCost !== rb.subtreeCost ||
     ra.isParallel !== rb.isParallel ||
     ra.ctxDelta !== rb.ctxDelta ||
     ra.rootId !== rb.rootId
@@ -318,7 +311,7 @@ function SpanTreeRowImpl({
   const showFinish = finishReason && !NORMAL_FINISH.has(finishReason)
   const finishCls = finishReasonClass(finishReason)
   const errored = spanHasError(span)
-  const HandleIcon = isCollapsed ? ChevronRightIcon : ChevronDownIcon
+  const HandleIcon = isCollapsed ? ChevronRight : ChevronDown
   const showCount = childCount > 1
   const display = displayFor(span, agentLabels)
 
@@ -326,11 +319,12 @@ function SpanTreeRowImpl({
     <li data-span-id={span.id}>
       <div
         className={cn(
-          'group/row relative flex min-h-10 w-full cursor-pointer items-stretch pl-2 text-left text-xs',
+          'group/row relative flex min-h-9 w-full cursor-pointer items-stretch pl-2 text-left text-xs',
           selected ? 'bg-accent' : errored ? 'bg-destructive/5 hover:bg-destructive/10' : 'hover:bg-muted',
         )}
       >
         {errored && <div className="absolute inset-y-0 left-0 w-0.5 bg-destructive" aria-hidden />}
+        {selected && !errored && <div className="absolute inset-y-0 left-0 w-0.5 bg-violet-500" aria-hidden />}
         <div className="relative shrink-0" style={{ width: indentWidth }} aria-hidden>
           {railHasNext.map((hasNext, i) =>
             hasNext ? (
@@ -381,6 +375,7 @@ function SpanTreeRowImpl({
               {showCount && <span className="group-hover:hidden group-focus-visible:hidden">{childCount}</span>}
               <HandleIcon
                 className={showCount ? 'hidden size-3 group-hover:block group-focus-visible:block' : 'size-3'}
+                aria-hidden
               />
             </button>
           ) : (
@@ -399,32 +394,31 @@ function SpanTreeRowImpl({
           <div className="flex min-w-0 items-center gap-2">
             {display.tagLabel && (
               <span className={cn('inline-flex shrink-0 items-center gap-1 text-[11px] font-medium', display.tagColor)}>
-                {display.tagIcon && (
-                  <HugeiconsIcon icon={display.tagIcon} strokeWidth={1.75} className="size-3.5" aria-hidden />
-                )}
+                {display.tagIcon && <display.tagIcon className="size-3.5" aria-hidden />}
                 {display.tagLabel}
               </span>
             )}
             <span className="truncate font-medium text-foreground">{display.name}</span>
             {display.purposeLabel && (
-              <span className="shrink-0 text-[10px] font-medium text-amber-600 dark:text-amber-400">
+              <span className={`shrink-0 rounded px-1 py-px text-[10px] font-medium ${display.purposeCls}`}>
                 {display.purposeLabel}
               </span>
             )}
-            {isParallel && (
-              <span className="shrink-0 text-[10px] font-medium text-indigo-600 dark:text-indigo-400">⫽ parallel</span>
-            )}
+            {isParallel && <span className={`shrink-0 text-[10px] font-medium ${ACCENT.cyan.text}`}>⫽ parallel</span>}
             {depth === 0 &&
               (span.rawAttributes?.session_trigger_type ?? span.rawAttributes?.['session.trigger_type']) ===
                 'scheduled' && (
-                <span className="inline-flex shrink-0 items-center gap-1 text-[10px] font-medium text-amber-600 dark:text-amber-400">
-                  <HugeiconsIcon icon={Clock01Icon} strokeWidth={1.75} className="size-3" aria-hidden />
+                <span
+                  className={`inline-flex shrink-0 items-center gap-1 rounded px-1 py-px text-[10px] font-medium ${ACCENT.amber.badge}`}
+                >
+                  <Clock className="size-3" aria-hidden />
                   scheduled
                 </span>
               )}
           </div>
           {(() => {
-            if (isAgent) return null
+            // Agent rows stay clean except collapsed — then the hidden subtree's rollup must surface.
+            if (isAgent && !(isCollapsed && subtreeTokens > 0)) return null
             // Tool/MCP spans usually wrap a frontend handoff with no real backend work
             // — duration is sub-millisecond and meaningless. Hide it unless the span
             // actually did something (e.g. wraps a sub-agent or real backend execution).
@@ -474,7 +468,7 @@ function SpanTreeRowImpl({
                     : 'text-muted-foreground opacity-0 hover:bg-muted hover:text-foreground group-hover/row:opacity-100',
                 )}
               >
-                <IconBraces className="size-3.5" stroke={1.5} />
+                <Braces className="size-3.5" aria-hidden />
               </button>
             </TooltipTrigger>
             <TooltipContent>{rawOn ? 'Hide raw spans' : 'Show raw spans'}</TooltipContent>
@@ -487,7 +481,7 @@ function SpanTreeRowImpl({
 
 function finishReasonClass(reason: string | undefined): string {
   if (!reason) return ''
-  if (reason === 'tool_calls' || reason === 'tool_use') return 'text-sky-700 dark:text-sky-300'
+  if (reason === 'tool_calls' || reason === 'tool_use') return ACCENT.sky.status
   if (reason === 'length' || reason === 'max_tokens') return 'text-warning'
   if (reason === 'content_filter' || reason === 'error') return 'text-destructive'
   return 'text-muted-foreground'

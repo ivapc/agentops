@@ -18,3 +18,23 @@ export const SINGLE_TRACE = {
   sessionId: 'e2e-trace-7f3a2b',
   agent: 'SoloBot',
 } as const
+
+export const TASK = {
+  traceId: 'tr-task-nightly',
+  name: 'Nightly Report',
+} as const
+
+export const AGENT_AS_TOOL = {
+  sessionId: 'e2e-session-agent-tool',
+  orchestrator: 'Orchestrator',
+  subAgent: 'render_agent',
+  dataTool: 'list_records',
+  userMessage: 'List all records and render a summary report.',
+} as const
+
+export const RAW = {
+  sessionId: 'e2e-session-raw',
+  rootSpanId: 'sp-raw-agent',
+  // The hidden http child surfaced only when raw spans are toggled on.
+  hiddenSpanText: 'api.openai.com/v1/chat/completions',
+} as const

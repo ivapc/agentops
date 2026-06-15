@@ -1,21 +1,21 @@
-import { IconMaximize, IconShare2, IconX } from '@tabler/icons-react'
 import { Link } from '@tanstack/react-router'
+import { Maximize2, Share2, X } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
 import type { AutoRefreshInterval } from '#/components/auto-refresh-select'
-import { ConversationView } from '#/components/conversation-view'
 import { CopyButton } from '#/components/copy-button'
 import { Spinner } from '#/components/spinner'
 import { Button } from '#/components/ui/button'
 import { Sheet, SheetClose, SheetContent, SheetDescription, SheetTitle } from '#/components/ui/sheet'
 import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip'
 import { ContextWindow } from '#/features/inspect/components/context-window'
-import { buildInspectorView } from '#/features/inspect/logic'
+import { buildInspectorView, utilityInspect } from '#/features/inspect/logic'
 import { useCopyToClipboard } from '#/hooks/use-copy-to-clipboard'
 import type { Span } from '#/lib/spans'
-import { categorizeFromSpans } from '#/lib/telemetry/trace-category'
 import { serialize, type TimeRange } from '#/lib/time-range'
+import { ConversationView } from './conversation-view'
 import { InspectLayout } from './overview'
+import { TimelineView } from './timeline'
 import { useRawRoots } from './use-raw-roots'
 import { useInspectShortcuts } from './use-shortcuts'
 import { useSpanSearch } from './use-span-search'
@@ -78,9 +78,8 @@ export function InspectDrawer({
     },
   })
 
-  const category = useMemo(() => (spans.length > 0 ? categorizeFromSpans(spans) : undefined), [spans])
-  const isUtility = category === 'utility'
-  const hiddenTabs = useMemo<InspectView[] | undefined>(() => (isUtility ? ['conversation'] : undefined), [isUtility])
+  const utility = useMemo(() => (spans.length > 0 ? utilityInspect(spans) : null), [spans])
+  const hiddenTabs = utility?.hiddenTabs
 
   const expandSearch = useMemo(() => {
     if (!expandSession) return undefined
@@ -113,10 +112,9 @@ export function InspectDrawer({
 
   // Auto-select the single chat span for utility traces so the detail panel opens immediately.
   useEffect(() => {
-    if (!isUtility || selectedId) return
-    const chatSpan = spans.find((s) => s.operation === 'chat')
-    if (chatSpan) setSelectedId(chatSpan.id)
-  }, [isUtility, spans, selectedId])
+    if (!utility?.chatSpanId || selectedId) return
+    setSelectedId(utility.chatSpanId)
+  }, [utility, selectedId])
 
   useEffect(() => {
     let frame = 0
@@ -196,7 +194,7 @@ export function InspectDrawer({
                 <TooltipTrigger asChild>
                   <Button asChild variant="ghost" size="icon-sm" aria-label="Open in full page">
                     <Link to="/traces/$traceId" params={{ traceId: expandTrace.traceId }} onClick={() => onClose()}>
-                      <IconMaximize />
+                      <Maximize2 aria-hidden />
                     </Link>
                   </Button>
                 </TooltipTrigger>
@@ -212,7 +210,7 @@ export function InspectDrawer({
                       search={expandSearch}
                       onClick={() => onClose()}
                     >
-                      <IconMaximize />
+                      <Maximize2 aria-hidden />
                     </Link>
                   </Button>
                 </TooltipTrigger>
@@ -221,7 +219,7 @@ export function InspectDrawer({
             ) : null}
             <SheetClose asChild>
               <Button variant="ghost" size="icon-sm" aria-label="Close">
-                <IconX />
+                <X aria-hidden />
               </Button>
             </SheetClose>
           </div>
@@ -243,14 +241,23 @@ export function InspectDrawer({
         />
 
         <div className="flex min-h-0 flex-1 flex-col">
-          {drawerView === 'conversation' ? (
+          {drawerView !== 'spans' ? (
             <section className="min-h-0 flex-1 overflow-hidden">
               {!contentReady || (loading && spans.length === 0) ? (
                 <div className="flex h-full items-center justify-center text-xs text-muted-foreground">
                   <Spinner />
                 </div>
-              ) : (
+              ) : drawerView === 'conversation' ? (
                 <ConversationView view={view} onSelect={setSelectedId} />
+              ) : (
+                <TimelineView
+                  view={view}
+                  selectedId={selectedId}
+                  onSelect={(id) => {
+                    setSelectedId(id)
+                    setDrawerView('spans')
+                  }}
+                />
               )}
             </section>
           ) : (
@@ -283,7 +290,7 @@ function ShareLinkButton({ url }: { url: string }) {
 
   return (
     <Button type="button" variant="outline" size="sm" onClick={onClick}>
-      <IconShare2 />
+      <Share2 aria-hidden />
       Share Link
     </Button>
   )

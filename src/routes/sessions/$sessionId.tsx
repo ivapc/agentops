@@ -1,9 +1,8 @@
-import { ChatBubbleLeftRightIcon } from '@heroicons/react/24/outline'
 import { useQuery } from '@tanstack/react-query'
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
+import { MessagesSquare } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { AUTO_REFRESH_MS } from '#/components/auto-refresh-select'
-import { ConversationView } from '#/components/conversation-view'
 import { CopyButton } from '#/components/copy-button'
 import { PageBreadcrumb } from '#/components/page-breadcrumb'
 import { SiteHeader } from '#/components/site-header'
@@ -12,17 +11,19 @@ import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '#/
 import {
   buildInspectorView,
   ContextWindow,
+  ConversationView,
   InspectLayout,
   type InspectView,
   InspectViewBar,
+  TimelineView,
   useInspectShortcuts,
   useRawRoots,
   useSpanSearch,
+  utilityInspect,
 } from '#/features/inspect'
 import { useInspectAutoRefresh } from '#/hooks/use-auto-refresh'
-import { categorizeFromSpans } from '#/lib/telemetry/trace-category'
+import { sessionQuery } from '#/lib/session-queries'
 import { parse, type TimeRange } from '#/lib/time-range'
-import { sessionQuery } from './-data'
 
 export const Route = createFileRoute('/sessions/$sessionId')({
   validateSearch: (search: Record<string, unknown>): SessionSearch => ({
@@ -49,8 +50,7 @@ interface SessionSearch {
 }
 
 function parseSessionView(value: unknown): InspectView | undefined {
-  if (value === 'conversation') return 'conversation'
-  if (value === 'spans') return 'spans'
+  if (value === 'conversation' || value === 'spans' || value === 'timeline') return value
   return undefined
 }
 
@@ -70,11 +70,11 @@ function SessionDetail() {
     refetchInterval: AUTO_REFRESH_MS[autoRefresh],
   })
   const [selectedId, setSelectedId] = useState<string | null>(() =>
-    search.view === 'spans' && search.span ? search.span : null,
+    search.view !== 'conversation' && search.span ? search.span : null,
   )
 
   useEffect(() => {
-    setSelectedId(search.view === 'spans' && search.span ? search.span : null)
+    setSelectedId(search.view !== 'conversation' && search.span ? search.span : null)
   }, [search.view, search.span])
 
   const inspectView = search.view
@@ -87,22 +87,24 @@ function SessionDetail() {
 
   const inspectorView = useMemo(() => buildInspectorView(spans), [spans])
   const raw = useRawRoots(inspectorView)
-  const category = useMemo(() => (spans.length > 0 ? categorizeFromSpans(spans) : undefined), [spans])
-  const isUtility = category === 'utility'
-  const hiddenTabs = useMemo<InspectView[] | undefined>(() => (isUtility ? ['conversation'] : undefined), [isUtility])
+  const utility = useMemo(() => (spans.length > 0 ? utilityInspect(spans) : null), [spans])
+  const hiddenTabs = utility?.hiddenTabs
 
   // Redirect utility traces to Spans view when no explicit ?view= was provided by the user.
   const [hasRedirected, setHasRedirected] = useState(false)
   useEffect(() => {
-    if (isUtility && search.view === 'conversation' && !hasRedirected) {
+    if (utility && search.view === 'conversation' && !hasRedirected) {
       setHasRedirected(true)
-      const chatSpan = spans.find((s) => s.operation === 'chat')
       navigate({
-        search: (prev) => ({ range: prev.range, view: 'spans' as const, ...(chatSpan ? { span: chatSpan.id } : {}) }),
+        search: (prev) => ({
+          range: prev.range,
+          view: 'spans' as const,
+          ...(utility.chatSpanId ? { span: utility.chatSpanId } : {}),
+        }),
         replace: true,
       })
     }
-  }, [isUtility, search.view, hasRedirected, spans, navigate])
+  }, [utility, search.view, hasRedirected, navigate])
 
   const setInspectView = (view: InspectView) => {
     navigate({
@@ -183,7 +185,7 @@ function SessionDetail() {
             <Empty>
               <EmptyHeader>
                 <EmptyMedia variant="icon">
-                  <ChatBubbleLeftRightIcon />
+                  <MessagesSquare aria-hidden />
                 </EmptyMedia>
                 <EmptyTitle>Session not found</EmptyTitle>
                 <EmptyDescription>
@@ -204,6 +206,15 @@ function SessionDetail() {
             />
           ) : inspectView === 'conversation' ? (
             <ConversationView view={inspectorView} onSelect={setSelectedId} />
+          ) : inspectView === 'timeline' ? (
+            <TimelineView
+              view={inspectorView}
+              selectedId={selectedId}
+              onSelect={(id) => {
+                setSelectedId(id)
+                navigate({ search: (prev) => ({ range: prev.range, view: 'spans' as const, span: id }) })
+              }}
+            />
           ) : null}
         </div>
       </div>

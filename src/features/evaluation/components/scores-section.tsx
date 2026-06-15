@@ -1,18 +1,12 @@
-import { Delete02Icon, Edit02Icon } from '@hugeicons/core-free-icons'
-import { HugeiconsIcon } from '@hugeicons/react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { SquarePen, Trash2 } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { toast } from 'sonner'
 import { Button } from '#/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '#/components/ui/select'
 import { Skeleton } from '#/components/ui/skeleton'
 import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip'
-import {
-  deleteScore,
-  listScoreConfigs,
-  listScoresForTarget,
-  upsertHumanScore,
-} from '#/features/evaluation/server/scores'
+import { deleteScore, listScoresForTarget, upsertHumanScore } from '#/features/evaluation/server/scores'
 import { useUser } from '#/hooks/use-user'
 import {
   type ConfigHint,
@@ -25,9 +19,12 @@ import {
   type ScoreTargetKind,
   scoreIsBad,
 } from '#/lib/eval/evaluation'
+import { errMessage } from '#/lib/format'
 import { queryKeys } from '#/lib/query-keys'
+import { ACCENT } from '#/lib/tone'
 import { cn } from '#/lib/utils'
 import { DimensionForm } from './dimension-create'
+import { scoreConfigsQuery } from './queries'
 import { ScoreInput } from './score-input'
 import { ScoreValue } from './score-value'
 
@@ -48,7 +45,7 @@ export function ScoresSection({ targetKind, targetId, parentTraceId, parentSessi
     queryKey: queryKeys.scores.byTarget(targetKind, targetId),
     queryFn: () => listScoresForTarget({ data: { targetKind, targetId } }),
   })
-  const { data: configs } = useQuery({ queryKey: queryKeys.scores.configs(), queryFn: () => listScoreConfigs() })
+  const { data: configs } = useQuery(scoreConfigsQuery)
 
   const invalidate = async () => {
     await Promise.all([
@@ -87,7 +84,7 @@ export function ScoresSection({ targetKind, targetId, parentTraceId, parentSessi
       setAdding(null)
       toast.success('Score saved')
     },
-    onError: (e) => toast.error(e instanceof Error ? e.message : 'Could not save score'),
+    onError: (e) => toast.error(errMessage(e)),
   })
 
   const deleteMutation = useMutation({
@@ -163,7 +160,7 @@ export function ScoresSection({ targetKind, targetId, parentTraceId, parentSessi
         <div className="flex items-center gap-2">
           {activeConfigs.length > 0 ? (
             <Select value="" onValueChange={(name) => setAdding(name)}>
-              <SelectTrigger size="sm" className="w-48">
+              <SelectTrigger size="sm" className="w-48 text-xs">
                 <SelectValue placeholder="Add a score…" />
               </SelectTrigger>
               <SelectContent>
@@ -212,9 +209,7 @@ function DimensionGroup({
       <div className="flex items-center justify-between gap-2">
         <span className="text-xs font-medium text-foreground">{name}</span>
         {disagreement && (
-          <span className="rounded bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-medium text-amber-600 dark:text-amber-400">
-            disagreement
-          </span>
+          <span className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${ACCENT.amber.badge}`}>disagreement</span>
         )}
       </div>
       <div className="mt-1.5 flex flex-col gap-1">
@@ -266,7 +261,7 @@ function ScoreRow({
       {editable && (
         <div className="ml-auto flex items-center gap-0.5">
           <Button size="icon-sm" variant="ghost" aria-label="Edit score" onClick={() => onEdit(score)}>
-            <HugeiconsIcon icon={Edit02Icon} strokeWidth={2} />
+            <SquarePen />
           </Button>
           <Button
             size="icon-sm"
@@ -275,7 +270,7 @@ function ScoreRow({
             className="text-muted-foreground hover:text-destructive"
             onClick={() => onDelete(score.id)}
           >
-            <HugeiconsIcon icon={Delete02Icon} strokeWidth={2} />
+            <Trash2 />
           </Button>
         </div>
       )}

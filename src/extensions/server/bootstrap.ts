@@ -1,3 +1,4 @@
+import { registerEnrichmentSource } from '#/features/inspect/server/enrich-span'
 import { registerExtension } from '#/lib/extension-registry'
 import { cosmosExtension } from './cosmos-extension'
 
@@ -9,4 +10,12 @@ export function registerExtensions(): void {
   if (done) return
   done = true
   registerExtension(cosmosExtension)
+  // Truncated-attr enrichment goes through upstream's sanctioned hook; the fork
+  // registry stays for toolPayloadSizes, which upstream has no hook for.
+  if (cosmosExtension.resolveTruncatedAttr) {
+    registerEnrichmentSource({
+      name: cosmosExtension.name,
+      resolve: (req) => cosmosExtension.resolveTruncatedAttr!(req),
+    })
+  }
 }

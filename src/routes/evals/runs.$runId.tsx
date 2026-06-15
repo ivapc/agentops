@@ -1,33 +1,24 @@
-import { TestTubeIcon } from '@hugeicons/core-free-icons'
-import { HugeiconsIcon } from '@hugeicons/react'
 import { queryOptions, useQuery } from '@tanstack/react-query'
 import { createFileRoute, Link } from '@tanstack/react-router'
+import { TestTube } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { Page } from '#/components/page'
 import { type Crumb, PageBreadcrumb } from '#/components/page-breadcrumb'
 import { RelativeTime } from '#/components/relative-time'
+import { StatusDot } from '#/components/status-dot'
 import { Badge } from '#/components/ui/badge'
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '#/components/ui/empty'
 import { Label } from '#/components/ui/label'
 import { Skeleton } from '#/components/ui/skeleton'
 import { Switch } from '#/components/ui/switch'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '#/components/ui/table'
-import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip'
-import { ScoreValue } from '#/features/evaluation/components/score-value'
-import { getEvalDefinition, getEvalRun } from '#/features/evaluation/server/evals'
-import { listScoreConfigs, listScoresByRun } from '#/features/evaluation/server/scores'
-import {
-  type ConfigHint,
-  EVAL_RUN_STATUS_BADGE,
-  type EvalRun,
-  isEvalRunActive,
-  judgeErrorHint,
-  SCORE_TONE_CLASS,
-  type Score,
-  scoreIsBad,
-} from '#/lib/eval/evaluation'
+import { definitionQuery, ScoreCaseRow, useScaleMap } from '#/features/evaluation'
+import { getEvalRun } from '#/features/evaluation/server/evals'
+import { listScoresByRun } from '#/features/evaluation/server/scores'
+import { EVAL_RUN_STATUS_BADGE, type EvalRun, isEvalRunActive, judgeErrorHint, scoreIsBad } from '#/lib/eval/evaluation'
 import { formatCost } from '#/lib/format'
 import { queryKeys, STALE_LIVE_MS } from '#/lib/query-keys'
+import { ACCENT } from '#/lib/tone'
 import { cn } from '#/lib/utils'
 
 const runQuery = (id: number) =>
@@ -80,15 +71,11 @@ function RunDetailPage() {
           <Empty>
             <EmptyHeader>
               <EmptyMedia variant="icon">
-                <HugeiconsIcon icon={TestTubeIcon} />
+                <TestTube />
               </EmptyMedia>
               <EmptyTitle>Run not found</EmptyTitle>
               <EmptyDescription>
-                This run may have been deleted.{' '}
-                <Link to="/evals" className="text-primary underline-offset-4 hover:underline">
-                  Back to evals
-                </Link>
-                .
+                This run may have been deleted. <Link to="/evals">Back to evals</Link>.
               </EmptyDescription>
             </EmptyHeader>
           </Empty>
@@ -137,37 +124,11 @@ function RunDetailLoaded({ run }: { run: EvalRun }) {
     refetchInterval: isEvalRunActive(run.status) ? 1500 : false,
   })
   // Fetch the parent evaluator so the breadcrumb can name it (not just "Run #N").
-  const { data: definitionDetail } = useQuery({
-    queryKey: queryKeys.evals.definition(run.definitionId),
-    queryFn: () => getEvalDefinition({ data: run.definitionId }),
-    staleTime: STALE_LIVE_MS,
-  })
+  const { data: definitionDetail } = useQuery(definitionQuery(run.definitionId))
   const evaluatorName = definitionDetail?.definition.name
   const [failedOnly, setFailedOnly] = useState(false)
 
-  // Per-dimension polarity/scale, so verdicts classify against their config (not
-  // the lexicon/unscaled fallback) — required for correct tone + "Failed only".
-  const { data: configs = [] } = useQuery({
-    queryKey: queryKeys.scores.configs(),
-    queryFn: () => listScoreConfigs(),
-    staleTime: STALE_LIVE_MS,
-  })
-  const scaleByName = useMemo(
-    () =>
-      new Map<string, ConfigHint>(
-        configs.map((c) => [
-          c.name,
-          {
-            minValue: c.minValue,
-            maxValue: c.maxValue,
-            passLabels: c.passLabels,
-            failLabels: c.failLabels,
-            direction: c.direction,
-          },
-        ]),
-      ),
-    [configs],
-  )
+  const scaleByName = useScaleMap()
 
   const summary = run.summary
   // "Failed only" also surfaces errored cases (scoreIsBad is false for null-verdict errors).
@@ -192,6 +153,7 @@ function RunDetailLoaded({ run }: { run: EvalRun }) {
         <div className="flex flex-wrap items-center gap-3">
           <h1 className="text-lg font-semibold">Run #{id}</h1>
           <Badge variant={EVAL_RUN_STATUS_BADGE[run.status]} className="capitalize">
+            {isEvalRunActive(run.status) && <StatusDot pulse />}
             {run.status}
           </Badge>
           {run.blessed && <Badge variant="outline">Blessed</Badge>}
@@ -224,7 +186,7 @@ function RunDetailLoaded({ run }: { run: EvalRun }) {
 
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
           <StatTile label="Total" value={summary?.total ?? scores.length} />
-          <StatTile label="Pass" value={summary?.pass ?? '—'} className="text-emerald-600 dark:text-emerald-400" />
+          <StatTile label="Pass" value={summary?.pass ?? '—'} className={ACCENT.emerald.status} />
           <StatTile label="Fail" value={summary?.fail ?? '—'} className="text-destructive" />
           <StatTile
             label="Errors"
@@ -232,7 +194,10 @@ function RunDetailLoaded({ run }: { run: EvalRun }) {
             className={summary?.errors ? 'text-destructive' : undefined}
           />
           <StatTile label="Cost" value={formatCost(summary?.costUsd ?? 0)} />
-          <StatTile label="Model" value={<span className="font-mono text-xs">{summary?.model ?? '—'}</span>} />
+          <StatTile
+            label="Model"
+            value={<span className={`font-mono text-xs ${ACCENT.violet.ident}`}>{summary?.model ?? '—'}</span>}
+          />
         </div>
 
         <div className="flex items-center justify-between gap-2">
@@ -256,7 +221,7 @@ function RunDetailLoaded({ run }: { run: EvalRun }) {
           <Empty>
             <EmptyHeader>
               <EmptyMedia variant="icon">
-                <HugeiconsIcon icon={TestTubeIcon} />
+                <TestTube />
               </EmptyMedia>
               <EmptyTitle>No cases in this run</EmptyTitle>
               <EmptyDescription>This run produced no scored cases.</EmptyDescription>
@@ -282,7 +247,9 @@ function RunDetailLoaded({ run }: { run: EvalRun }) {
                     </TableCell>
                   </TableRow>
                 ) : (
-                  visible.map((score) => <CaseRow key={score.id} score={score} scale={scaleByName.get(score.name)} />)
+                  visible.map((score) => (
+                    <ScoreCaseRow key={score.id} score={score} scale={scaleByName.get(score.name)} showError />
+                  ))
                 )}
               </TableBody>
             </Table>
@@ -290,72 +257,5 @@ function RunDetailLoaded({ run }: { run: EvalRun }) {
         )}
       </div>
     </Page>
-  )
-}
-
-function CaseRow({ score, scale }: { score: Score; scale?: ConfigHint }) {
-  const bad = scoreIsBad(score, scale)
-  const traceTarget = score.parentTraceId ?? score.targetId
-  // Only a synthetic dataset item with no backing trace is non-linkable; items
-  // sourced from real traces/spans keep their real id and stay linkable.
-  const isItem = score.datasetRunItemId != null && score.parentTraceId == null && score.targetId.startsWith('item:')
-
-  return (
-    <TableRow className="[&>:first-child]:pl-4 [&>:last-child]:pr-4 lg:[&>:first-child]:pl-6 lg:[&>:last-child]:pr-6">
-      <TableCell>
-        <span className="flex items-center gap-2">
-          <Badge variant="outline" className="capitalize">
-            {score.targetKind}
-          </Badge>
-          {isItem ? (
-            <span className="max-w-[16rem] truncate font-mono text-xs text-muted-foreground" title={score.targetId}>
-              {score.targetId}
-            </span>
-          ) : (
-            <Link
-              to="/traces"
-              search={{ trace: traceTarget }}
-              className="max-w-[16rem] truncate font-mono text-xs text-primary underline-offset-4 hover:underline"
-              title={score.targetId}
-            >
-              {score.targetId}
-            </Link>
-          )}
-        </span>
-      </TableCell>
-      <TableCell>
-        <ScoreValue
-          score={score}
-          scale={scale}
-          className={cn('font-medium', bad ? SCORE_TONE_CLASS.bad : SCORE_TONE_CLASS.good)}
-        />
-      </TableCell>
-      <TableCell className="max-w-[28rem]">
-        {score.explanation ? (
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <span className="block truncate text-xs text-muted-foreground">{score.explanation}</span>
-            </TooltipTrigger>
-            <TooltipContent side="bottom" className="max-w-md whitespace-pre-wrap">
-              {score.explanation}
-            </TooltipContent>
-          </Tooltip>
-        ) : (
-          <span className="text-xs text-muted-foreground">—</span>
-        )}
-      </TableCell>
-      <TableCell>
-        {score.errorType ? (
-          <Badge variant="destructive" className="font-mono text-[11px]">
-            {score.errorType}
-          </Badge>
-        ) : (
-          <span className="text-xs text-muted-foreground">—</span>
-        )}
-      </TableCell>
-      <TableCell className="text-right">
-        <RelativeTime ts={score.createdAt} className="text-xs text-muted-foreground tabular-nums" />
-      </TableCell>
-    </TableRow>
   )
 }

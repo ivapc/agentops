@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { CHAT, SINGLE_TRACE } from './fixtures'
+import { AGENT_AS_TOOL, CHAT, RAW, SINGLE_TRACE } from './fixtures'
 
 test('deep-links into the spans view and hydrates the span tree', async ({ page }) => {
   await page.goto(`/sessions/${CHAT.sessionId}?view=spans&span=${CHAT.chatSpanId}`)
@@ -30,6 +30,18 @@ test('conversation view reconstructs the messages from the spans', async ({ page
   await expect(page.getByText(CHAT.assistantSnippet, { exact: false })).toBeVisible()
 })
 
+test('conversation view nests the agent-as-tool under the orchestrator turn', async ({ page }) => {
+  await page.goto(`/sessions/${AGENT_AS_TOOL.sessionId}`)
+
+  await expect(page.getByText(AGENT_AS_TOOL.userMessage)).toBeVisible()
+  // The data tool and the sub-agent card render indented under the turn (border-l),
+  // while the user message stays at the base — the fix for the flat hierarchy.
+  const turnBody = page.locator('div.border-l-2.pl-3')
+  await expect(turnBody.getByText(AGENT_AS_TOOL.dataTool, { exact: false })).toBeVisible()
+  await expect(turnBody.getByText(AGENT_AS_TOOL.subAgent, { exact: false })).toBeVisible()
+  await expect(turnBody).not.toContainText(AGENT_AS_TOOL.userMessage)
+})
+
 test('spans-view inspector panel exposes its tabs and raw attributes', async ({ page }) => {
   await page.goto(`/sessions/${CHAT.sessionId}?view=spans&span=${CHAT.chatSpanId}`)
 
@@ -39,4 +51,35 @@ test('spans-view inspector panel exposes its tabs and raw attributes', async ({ 
 
   await panel.getByRole('tab', { name: 'Attributes' }).click()
   await expect(page.getByText(CHAT.rawAttrKey)).toBeVisible()
+})
+
+test('per-row raw toggle reveals infra spans and toggles back off', async ({ page }) => {
+  await page.goto(`/sessions/${RAW.sessionId}?view=spans`)
+
+  const rootRow = page.locator(`[data-span-id="${RAW.rootSpanId}"]`)
+  await expect(rootRow).toBeVisible()
+  await expect(page.getByText(RAW.hiddenSpanText)).toHaveCount(0)
+
+  await rootRow.hover()
+  await page.getByRole('button', { name: 'Show raw spans for this trace' }).click()
+  await expect(page.getByText(RAW.hiddenSpanText)).toBeVisible()
+
+  // Toggling off from the same per-row control must actually hide it again.
+  await rootRow.hover()
+  await page.getByRole('button', { name: 'Hide raw spans for this trace' }).click()
+  await expect(page.getByText(RAW.hiddenSpanText)).toHaveCount(0)
+})
+
+test('a long root name truncates and never pushes the raw toggle past the panel edge', async ({ page }) => {
+  await page.goto(`/sessions/${RAW.sessionId}?view=spans`)
+
+  const rootRow = page.locator(`[data-span-id="${RAW.rootSpanId}"]`)
+  await rootRow.hover()
+  const toggle = page.getByRole('button', { name: 'Show raw spans for this trace' })
+  const viewport = page.locator('[data-slot="scroll-area-viewport"]').first()
+
+  const tb = await toggle.boundingBox()
+  const vb = await viewport.boundingBox()
+  if (!tb || !vb) throw new Error('expected bounding boxes for toggle and viewport')
+  expect(tb.x + tb.width).toBeLessThanOrEqual(vb.x + vb.width + 1)
 })

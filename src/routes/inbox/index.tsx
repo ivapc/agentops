@@ -1,11 +1,11 @@
-import { InboxIcon } from '@heroicons/react/20/solid'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { createFileRoute } from '@tanstack/react-router'
+import { Inbox } from 'lucide-react'
 import { Page } from '#/components/page'
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '#/components/ui/empty'
+import { dismissInboxItemFn, inboxUnreadCountQuery, openInboxQuery, snoozeInboxItemFn } from '#/features/inbox/queries'
 import { queryKeys } from '#/lib/query-keys'
 import { InboxDataTable } from './-components/data-table'
-import { dismissInboxItemFn, inboxUnreadCountQuery, openInboxQuery, snoozeInboxItemFn } from './-data'
 
 export const Route = createFileRoute('/inbox/')({
   loader: ({ context }) => context.queryClient.ensureQueryData(openInboxQuery()),
@@ -39,7 +39,7 @@ function InboxPage() {
           <Empty>
             <EmptyHeader>
               <EmptyMedia variant="icon">
-                <InboxIcon />
+                <Inbox aria-hidden />
               </EmptyMedia>
               <EmptyTitle>No notifications</EmptyTitle>
               <EmptyDescription>Nothing here yet.</EmptyDescription>

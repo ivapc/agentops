@@ -1,4 +1,3 @@
-import { IconChevronLeft, IconChevronRight, IconChevronsLeft, IconChevronsRight } from '@tabler/icons-react'
 import {
   type ColumnFiltersState,
   flexRender,
@@ -12,10 +11,9 @@ import {
 } from '@tanstack/react-table'
 import * as React from 'react'
 import type { AutoRefreshInterval } from '#/components/auto-refresh-select'
+import { DataTablePagination } from '#/components/data-table-pagination'
 import { DataTableToolbar } from '#/components/data-table-toolbar'
 import { Spinner } from '#/components/spinner'
-import { Button } from '#/components/ui/button'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '#/components/ui/select'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '#/components/ui/table'
 import type { ToolCatalogRow } from '#/lib/telemetry'
 import type { TimeRange } from '#/lib/time-range'
@@ -127,73 +125,7 @@ export function ToolsDataTable({
           </Table>
         </div>
       </div>
-      <div className="-mx-0 -mb-4 shrink-0 border-t bg-background md:-mb-6">
-        <div className="flex flex-wrap items-center justify-end gap-3 px-4 py-3 lg:px-6">
-          <div className="flex items-center gap-4 lg:gap-6">
-            <div className="hidden items-center gap-2 lg:flex">
-              <p className="text-xs font-medium">Rows per page</p>
-              <Select
-                value={`${table.getState().pagination.pageSize}`}
-                onValueChange={(value) => table.setPageSize(Number(value))}
-              >
-                <SelectTrigger size="sm" className="w-[68px]">
-                  <SelectValue placeholder={table.getState().pagination.pageSize} />
-                </SelectTrigger>
-                <SelectContent side="top">
-                  {[25, 50, 100, 200].map((pageSize) => (
-                    <SelectItem key={pageSize} value={`${pageSize}`}>
-                      {pageSize}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="flex w-[96px] items-center justify-center text-xs font-medium">
-              Page {table.getState().pagination.pageIndex + 1} of {Math.max(table.getPageCount(), 1)}
-            </div>
-            <div className="flex items-center gap-1">
-              <Button
-                variant="outline"
-                size="icon-sm"
-                className="hidden lg:flex"
-                onClick={() => table.setPageIndex(0)}
-                disabled={!table.getCanPreviousPage()}
-              >
-                <span className="sr-only">First page</span>
-                <IconChevronsLeft />
-              </Button>
-              <Button
-                variant="outline"
-                size="icon-sm"
-                onClick={() => table.previousPage()}
-                disabled={!table.getCanPreviousPage()}
-              >
-                <span className="sr-only">Previous page</span>
-                <IconChevronLeft />
-              </Button>
-              <Button
-                variant="outline"
-                size="icon-sm"
-                onClick={() => table.nextPage()}
-                disabled={!table.getCanNextPage()}
-              >
-                <span className="sr-only">Next page</span>
-                <IconChevronRight />
-              </Button>
-              <Button
-                variant="outline"
-                size="icon-sm"
-                className="hidden lg:flex"
-                onClick={() => table.setPageIndex(table.getPageCount() - 1)}
-                disabled={!table.getCanNextPage()}
-              >
-                <span className="sr-only">Last page</span>
-                <IconChevronsRight />
-              </Button>
-            </div>
-          </div>
-        </div>
-      </div>
+      <DataTablePagination table={table} />
     </div>
   )
 }
