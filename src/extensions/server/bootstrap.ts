@@ -12,10 +12,8 @@ export function registerExtensions(): void {
   registerExtension(cosmosExtension)
   // Truncated-attr enrichment goes through upstream's sanctioned hook; the fork
   // registry stays for toolPayloadSizes, which upstream has no hook for.
-  if (cosmosExtension.resolveTruncatedAttr) {
-    registerEnrichmentSource({
-      name: cosmosExtension.name,
-      resolve: (req) => cosmosExtension.resolveTruncatedAttr!(req),
-    })
+  const resolve = cosmosExtension.resolveTruncatedAttr
+  if (resolve) {
+    registerEnrichmentSource({ name: cosmosExtension.name, resolve })
   }
 }

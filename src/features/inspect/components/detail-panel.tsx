@@ -27,7 +27,7 @@ import { cn } from '#/lib/utils'
 import { ContextSegmentBar } from './context-segment-bar'
 import { computeContextSegments } from './context-segments'
 import { displayFor, fmtNum, formatDuration } from './shared'
-import { TruncatedAttrFallback } from './truncated-attr-fallback'
+import { TruncatedAttrFallback, TruncatedAttrNote } from './truncated-attr-fallback'
 import { LEVEL_VARIANT, useSessionLogs } from './use-session-logs'
 
 export function DetailPanel({
@@ -141,10 +141,10 @@ export function DetailPanel({
       {systemPrompt ? (
         <RoleCard kind="system" label="system prompt" content={systemPrompt} />
       ) : span.truncatedAttrs?.systemInstructions ? (
-        <TruncatedAttrFallback span={span} field="systemInstructions" />
+        <TruncatedAttrNote field="systemInstructions" />
       ) : null}
 
-      {span.truncatedAttrs?.toolDefinitions && <TruncatedAttrFallback span={span} field="toolDefinitions" />}
+      {span.truncatedAttrs?.toolDefinitions && <TruncatedAttrNote field="toolDefinitions" />}
       {span.inputParams &&
         (span.truncatedAttrs?.inputParams ? (
           <TruncatedAttrFallback span={span} field="inputParams" />

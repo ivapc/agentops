@@ -40,7 +40,7 @@ export async function cosmosSystemPrompt(input: EnrichSpanInput): Promise<SpanEn
         const parts: string[] = []
         for (const item of contents) {
           if (item && typeof item === 'object') {
-            const t = (item as Record<string, unknown>)
+            const t = item as Record<string, unknown>
             // $type:"text" with Text field (MAF SDK)
             if (t['$type'] === 'text' && typeof t['Text'] === 'string' && t['Text']) {
               parts.push(t['Text'] as string)

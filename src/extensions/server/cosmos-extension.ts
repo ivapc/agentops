@@ -1,7 +1,9 @@
 import type { EnrichSpanRequest, Extension } from '#/lib/extension-registry'
 import { isConfigured } from './cosmos-client'
+import { cosmosToolResultFromSession } from './sources/cosmos-agent-session'
 import { cosmosMessages } from './sources/cosmos-messages'
 import { cosmosSystemPrompt } from './sources/cosmos-system-prompt'
+import { cosmosToolCall } from './sources/cosmos-tool-call'
 import { cosmosToolDefinitions } from './sources/cosmos-tool-definitions'
 import { cosmosToolPayloads } from './sources/cosmos-tool-payloads'
 
@@ -24,6 +26,24 @@ export const cosmosExtension: Extension = {
         return (await cosmosSystemPrompt({ ...base, operation: 'invoke_agent' }))?.systemInstructions ?? null
       case 'toolDefinitions':
         return (await cosmosToolDefinitions({ ...base, operation: req.operation }))?.toolDefinitions ?? null
+      case 'toolResult': {
+        // Sub-agent (MCP) results never reach `messages`; the full payload is
+        // offloaded to the orchestrator's agent-session ToolData. Try that
+        // first, then fall back to the messages container for direct calls.
+        const fromSession = await cosmosToolResultFromSession({
+          threadId: req.sessionId,
+          callId: req.toolCallId,
+          toolName: req.toolName,
+        })
+        if (fromSession != null) return fromSession
+        return (
+          (await cosmosToolCall({ ...base, operation: req.operation, toolCallId: req.toolCallId }))?.toolResult ?? null
+        )
+      }
+      case 'inputParams':
+        return (
+          (await cosmosToolCall({ ...base, operation: req.operation, toolCallId: req.toolCallId }))?.toolInput ?? null
+        )
       default:
         return null
     }

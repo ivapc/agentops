@@ -8,6 +8,10 @@ export interface EnrichSpanRequest {
   sessionId?: string
   operation: Operation
   field: TruncatableField
+  /** Tool call id (`gen_ai.tool.call.id`) — required to correlate tool-call enrichment in Cosmos. */
+  toolCallId?: string
+  /** Tool name — fallback correlation key when the call id drifts between layers. */
+  toolName?: string
 }
 
 // A fork registers one Extension at boot to supply data the active telemetry

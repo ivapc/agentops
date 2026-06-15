@@ -19,6 +19,16 @@ interface Props {
   tokens?: number
 }
 
+// For fields no source can recover (system instructions, tool definitions —
+// only ever on the truncated chat-span attr). A quiet note, no enrichment call.
+export function TruncatedAttrNote({ field }: { field: TruncatableField }) {
+  return (
+    <div className="rounded-md border border-dashed border-border px-3 py-2 text-xs text-muted-foreground">
+      {LABELS[field]} truncated at ~8 KB — full value not retained in telemetry.
+    </div>
+  )
+}
+
 export function TruncatedAttrFallback({ span, field, tokens }: Props) {
   const label = LABELS[field]
   const { data, isPending } = useQuery({
@@ -30,6 +40,8 @@ export function TruncatedAttrFallback({ span, field, tokens }: Props) {
           traceId: span.traceId,
           sessionId: span.sessionId,
           operation: span.operation,
+          toolCallId: span.toolCallId,
+          toolName: span.toolName,
           field,
         },
       }),
@@ -56,7 +68,7 @@ export function TruncatedAttrFallback({ span, field, tokens }: Props) {
       {tokens != null && tokens > 0 ? ` (${fmtNum(tokens)} tokens)` : ''}.{' '}
       {isPending
         ? 'Checking enrichment sources…'
-        : 'No enrichment source returned the full payload. Configure one in src/features/inspect/server/enrich-span.ts.'}
+        : 'The full value was never persisted beyond this truncated copy, so it can’t be recovered.'}
     </div>
   )
 }
