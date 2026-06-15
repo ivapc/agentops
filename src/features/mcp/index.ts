@@ -1,8 +1,11 @@
 import { errMessage } from '#/lib/format'
 import { listServerTools } from './client'
 import { lintMcpRegistry } from './lint'
-import { getRegistrySource } from './registry'
+import { getRegistrySource, registerRegistrySource } from './registry'
 import type { McpRegistryResult, McpServer } from './types'
+
+export type { McpServerRef, RegistrySource } from './types'
+export { registerRegistrySource }
 
 const CONCURRENCY = 5
 

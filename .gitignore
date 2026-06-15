@@ -15,6 +15,7 @@ dev.db
 dev-prompts.db
 e2e.db
 deploy.zip
+/deploy/
 test-results
 playwright-report
 external/

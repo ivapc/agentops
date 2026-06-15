@@ -36,11 +36,22 @@ is detectably incomplete (e.g. missing `llmInput` but tokens are present).
 
 ## Integration touchpoints
 
-Only **one** upstream file is modified:
-
 - `src/components/inspect/detail-panel.tsx` — imports `useSpanEnrichment` and
   uses enrichment data as override when the telemetry provider's data is
   truncated. ~5 lines added.
+- `src/features/tasks/` — the `/tasks` rollup left-joins the SQL `AgentTasks`
+  registry + `AgentTaskRuns` lifetime stats (`fetchAgentTaskRegistry` →
+  `mergeTaskRegistry`) so paused / never-fired tasks and authoritative all-time
+  run counts surface alongside telemetry-derived rows. OTel still owns the
+  window-scoped metrics; the DB owns identity, status, and run history. No-op
+  when `EXT_SQL_CONNECTION_STRING` is unset.
+- `src/features/evaluation/server/datasets.ts` — `/datasets` runs switch to the
+  authenticated, company-scoped Teammate chat endpoint
+  (`/api/companies/{id}/chat`) when the run URL matches that shape: `callTeammateChat`
+  mints a real user token (Paycor password/refresh grant, `teammate-token.ts`) and
+  posts there; otherwise the upstream `callAgent` runs. The `TeammateEndpointPicker`
+  (env dropdown + company id) composes that URL in the run bar. No-op when
+  `EXT_TEAMMATE_*` is unset.
 
 ## Adding new enrichments
 
@@ -56,12 +67,21 @@ All secrets live in the root `.env` (gitignored) under the `EXT_` prefix:
 EXT_COSMOS_ENDPOINT=https://....documents.azure.com:443/
 EXT_COSMOS_KEY=<master-key-or-resource-token>
 EXT_COSMOS_DATABASE=teammate-service
-# Future:
-# EXT_SQL_CONNECTION_STRING=Server=...;Database=...;
+EXT_SQL_CONNECTION_STRING=Server=host,1433;Initial Catalog=db;User Id=u;password=p;
+
+# Teammate /datasets target — env dropdown + user-token auth for chat-endpoint runs
+EXT_TEAMMATE_ENVS=Local=http://localhost:5065,Dev=https://<dev-host>
+EXT_TEAMMATE_COMPANY_ID=<default company id the user has Teammate access to>
+EXT_TEAMMATE_TOKEN_URL=https://<paycor-secure-host>/accounts/api/v2/authtoken
+EXT_TEAMMATE_CLIENT_ID=TeammateService
+EXT_TEAMMATE_CLIENT_SECRET=<secret>
+EXT_TEAMMATE_USERNAME=<user>
+EXT_TEAMMATE_PASSWORD=<pass>
 ```
 
-When `EXT_COSMOS_ENDPOINT` is unset, the server function returns `null` — the
-app works identically to upstream with no enrichment overlay.
+When `EXT_COSMOS_ENDPOINT` / `EXT_SQL_CONNECTION_STRING` are unset, the relevant
+source returns `null`/`[]` — the app works identically to upstream with no
+enrichment overlay.
 
 ## Merge safety
 

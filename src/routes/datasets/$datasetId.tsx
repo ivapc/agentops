@@ -16,6 +16,7 @@ import { Skeleton } from '#/components/ui/skeleton'
 import { Switch } from '#/components/ui/switch'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '#/components/ui/tabs'
 import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip'
+import { TeammateEndpointPicker, useTeammateEnvsConfigured } from '#/extensions/components/teammate-endpoint-picker'
 import {
   type AgentOverrides,
   type DatasetDetail,
@@ -459,6 +460,7 @@ function RunsTab({
   const { examples, runs } = detail
   const [overridesOpen, setOverridesOpen] = useState(false)
   const overrideCount = countOverrides(overrides)
+  const teammateActive = useTeammateEnvsConfigured()
 
   // Keep focus-first order so compare lays the second run beside it.
   const selectedRuns = selectedIds.map((id) => runs.find((r) => r.id === id)).filter((r): r is DatasetRun => !!r)
@@ -470,14 +472,17 @@ function RunsTab({
         <Label htmlFor="ds-endpoint" className="text-xs whitespace-nowrap text-muted-foreground">
           Call my agent
         </Label>
-        <Input
-          id="ds-endpoint"
-          value={endpoint}
-          onChange={(e) => onEndpointChange(e.target.value)}
-          onBlur={onEndpointCommit}
-          placeholder={GLOBAL_DEFAULT_ENDPOINT}
-          className="h-8 max-w-sm font-mono text-xs"
-        />
+        <TeammateEndpointPicker value={endpoint} onChange={onEndpointChange} onCommit={onEndpointCommit} />
+        {!teammateActive && (
+          <Input
+            id="ds-endpoint"
+            value={endpoint}
+            onChange={(e) => onEndpointChange(e.target.value)}
+            onBlur={onEndpointCommit}
+            placeholder={GLOBAL_DEFAULT_ENDPOINT}
+            className="h-8 max-w-sm font-mono text-xs"
+          />
+        )}
         <Button variant="outline" size="sm" onClick={() => setOverridesOpen(true)}>
           <SlidersHorizontal data-icon="inline-start" />
           Overrides

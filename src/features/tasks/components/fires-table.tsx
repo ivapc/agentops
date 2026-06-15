@@ -26,47 +26,54 @@ export function FiresTable({ data, onRowClick }: FiresTableProps) {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {data.map((fire) => (
-              <TableRow
-                key={fire.id}
-                onClick={onRowClick ? () => onRowClick(fire) : undefined}
-                className={cn(
-                  'h-12 [&>:first-child]:pl-4 [&>:last-child]:pr-4 lg:[&>:first-child]:pl-6 lg:[&>:last-child]:pr-6',
-                  onRowClick && 'cursor-pointer',
-                )}
-              >
-                <TableCell>
-                  <RelativeTime
-                    ts={fire.startedAtMs}
-                    className="whitespace-nowrap tabular-nums text-muted-foreground"
-                  />
-                </TableCell>
-                <TableCell>
-                  {fire.hasError ? (
-                    <Badge variant="destructive" className="px-1.5">
-                      Error
-                    </Badge>
-                  ) : (
-                    <span className="text-sm text-muted-foreground">OK</span>
+            {data.map((fire) => {
+              // spanCount 0 = a row synthesized from AgentTaskRuns (DB), with no
+              // linked trace to open. Show "—" for Spans/Trace and disable the row.
+              const linked = fire.spanCount > 0
+              return (
+                <TableRow
+                  key={fire.id}
+                  onClick={onRowClick && linked ? () => onRowClick(fire) : undefined}
+                  className={cn(
+                    'h-12 [&>:first-child]:pl-4 [&>:last-child]:pr-4 lg:[&>:first-child]:pl-6 lg:[&>:last-child]:pr-6',
+                    onRowClick && linked && 'cursor-pointer',
                   )}
-                </TableCell>
-                <TableCell>
-                  <div
-                    className={cn(
-                      'flex items-center justify-end gap-1 tabular-nums',
-                      metricTone('duration', fire.durationMs),
+                >
+                  <TableCell>
+                    <RelativeTime
+                      ts={fire.startedAtMs}
+                      className="whitespace-nowrap tabular-nums text-muted-foreground"
+                    />
+                  </TableCell>
+                  <TableCell>
+                    {fire.hasError ? (
+                      <Badge variant="destructive" className="px-1.5">
+                        Error
+                      </Badge>
+                    ) : (
+                      <span className="text-sm text-muted-foreground">OK</span>
                     )}
-                  >
-                    <Clock className="size-3.5 opacity-80" />
-                    {formatDuration(fire.durationMs)}
-                  </div>
-                </TableCell>
-                <TableCell className="text-right tabular-nums">{fire.spanCount}</TableCell>
-                <TableCell>
-                  <span className="font-mono text-[11px] text-muted-foreground">{shortId(fire.id)}</span>
-                </TableCell>
-              </TableRow>
-            ))}
+                  </TableCell>
+                  <TableCell>
+                    <div
+                      className={cn(
+                        'flex items-center justify-end gap-1 tabular-nums',
+                        metricTone('duration', fire.durationMs),
+                      )}
+                    >
+                      <Clock className="size-3.5 opacity-80" />
+                      {formatDuration(fire.durationMs)}
+                    </div>
+                  </TableCell>
+                  <TableCell className="text-right tabular-nums">{linked ? fire.spanCount : '—'}</TableCell>
+                  <TableCell>
+                    <span className="font-mono text-[11px] text-muted-foreground">
+                      {linked ? shortId(fire.id) : '—'}
+                    </span>
+                  </TableCell>
+                </TableRow>
+              )
+            })}
           </TableBody>
         </Table>
       </div>

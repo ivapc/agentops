@@ -41,6 +41,25 @@ const FILTERS: FacetedFilterSpec[] = [
       { label: 'Error', value: 'error' },
     ],
   },
+  {
+    columnId: 'registryStatus',
+    title: 'Registry',
+    options: [
+      { label: 'Active', value: 'active' },
+      { label: 'Paused', value: 'paused' },
+      { label: 'Never run', value: 'never_run' },
+    ],
+  },
+  {
+    columnId: 'triggerSource',
+    title: 'Trigger source',
+    options: [
+      { label: 'Schedule', value: 'Schedule' },
+      { label: 'Event', value: 'WorkflowEvent' },
+      { label: 'Channel', value: 'Channel' },
+      { label: 'Chain step', value: 'ChainStep' },
+    ],
+  },
 ]
 
 interface TasksDataTableProps {
@@ -68,9 +87,11 @@ export function TasksDataTable({
 }: TasksDataTableProps) {
   const [columnVisibility, setColumnVisibility] = React.useState<VisibilityState>({
     status: false,
+    registryStatus: false,
+    triggerSource: false,
   })
   const [columnFilters, setColumnFilters] = React.useState<ColumnFiltersState>([])
-  const [sorting, setSorting] = React.useState<SortingState>([{ id: 'fires', desc: true }])
+  const [sorting, setSorting] = React.useState<SortingState>([{ id: 'lastFireMs', desc: true }])
   const [pagination, setPagination] = React.useState({ pageIndex: 0, pageSize: 50 })
 
   const table = useReactTable({

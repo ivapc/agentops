@@ -10,6 +10,12 @@ export interface McpServerRef {
   ownerTeam?: string
   ownerContact?: string
   source: string
+  domain?: string
+  description?: string
+  healthStatus?: string
+  isEnabled?: boolean
+  isSubAgent?: boolean
+  lastHeartbeat?: string
 }
 
 export interface McpTool {

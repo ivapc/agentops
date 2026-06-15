@@ -3,6 +3,7 @@ import { createServerFn } from '@tanstack/react-start'
 import { and, asc, desc, eq, inArray, isNull, sql } from 'drizzle-orm'
 import { db } from '#/db'
 import { datasetExamples, datasetRunItems, datasetRuns, datasets, scores } from '#/db/schema'
+import { callTeammateChat, isTeammateChatEndpoint, isTeammateTokenConfigured } from '#/extensions'
 import {
   type AgentOverrides,
   type CreateDatasetInput,
@@ -443,16 +444,19 @@ export const runDataset = createServerFn({ method: 'POST' })
       conversationIds.set(ex.id, conversationId)
       const input = (ex.inputJson as ExampleInput | null) ?? ''
       try {
-        const res = await callAgent({
-          endpointUrl,
-          input,
-          conversationId,
-          agentName,
-          model: ov?.model ?? undefined,
-          instructions: ov?.system_prompt ?? undefined,
-          tools: overrideTools?.length ? overrideTools : undefined,
-          sampling,
-        })
+        const res =
+          isTeammateTokenConfigured() && isTeammateChatEndpoint(endpointUrl)
+            ? await callTeammateChat({ endpointUrl, input, conversationId })
+            : await callAgent({
+                endpointUrl,
+                input,
+                conversationId,
+                agentName,
+                model: ov?.model ?? undefined,
+                instructions: ov?.system_prompt ?? undefined,
+                tools: overrideTools?.length ? overrideTools : undefined,
+                sampling,
+              })
         await db.insert(datasetRunItems).values({
           runId: run.id,
           exampleId: ex.id,

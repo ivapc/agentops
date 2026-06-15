@@ -1,9 +1,13 @@
 import { queryOptions } from '@tanstack/react-query'
 import { createServerFn } from '@tanstack/react-start'
+import { registerExtensions } from '#/extensions/server/bootstrap'
 import { listMcpRegistryWithLint } from '#/features/mcp'
 import { queryKeys, STALE_TELEMETRY_MS } from '#/lib/query-keys'
 
-const fetchMcp = createServerFn({ method: 'GET' }).handler(() => listMcpRegistryWithLint())
+const fetchMcp = createServerFn({ method: 'GET' }).handler(() => {
+  registerExtensions()
+  return listMcpRegistryWithLint()
+})
 
 export const mcpQuery = () =>
   queryOptions({

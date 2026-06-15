@@ -1,8 +1,10 @@
 import { Link } from '@tanstack/react-router'
 import { Bot, type LucideIcon, MessageSquare, Zap } from 'lucide-react'
 import { useMemo } from 'react'
+import { CopyButton } from '#/components/copy-button'
 import { KIND_META } from '#/components/kind-badge'
 import { RelativeTime } from '#/components/relative-time'
+import { TRIGGER_KIND_LABEL } from '#/features/tasks/columns'
 import type { TaskRow } from '#/features/tasks/rollup'
 import { formatDuration, shortId } from '#/lib/format'
 import type { TraceSummary } from '#/lib/telemetry'
@@ -30,6 +32,7 @@ export function TaskHero({ row, fires, fromMs, toMs, onFireClick }: TaskHeroProp
     <div className="border-b">
       <FlowChain row={row} errorRate={errorRate} />
       <StatusLine row={row} cadence={cadence} />
+      <IdStrip row={row} />
       <FireTimeline
         fires={fires}
         fromMs={fromMs}
@@ -116,6 +119,36 @@ function FlowChain({ row, errorRate }: { row: TaskRow; errorRate: number }) {
           caption={row.agent && row.serviceName && row.agent !== row.serviceName ? row.serviceName : undefined}
         />
       </div>
+    </div>
+  )
+}
+
+// Copyable IDs so a dev can match a task to its trigger / owner / origin chat.
+function IdStrip({ row }: { row: TaskRow }) {
+  const ids: { label: string; value: string }[] = []
+  if (row.taskId) ids.push({ label: 'task.id', value: row.taskId })
+  if (row.triggerSourceRef) {
+    const kind = row.triggerSourceKind ? (TRIGGER_KIND_LABEL[row.triggerSourceKind] ?? row.triggerSourceKind) : null
+    ids.push({ label: kind ? `trigger · ${kind}` : 'trigger', value: row.triggerSourceRef })
+  }
+  if (row.conversationId) ids.push({ label: 'thread', value: row.conversationId })
+  if (row.ownerUserId) ids.push({ label: 'owner', value: row.ownerUserId })
+  if (row.companyId != null) ids.push({ label: 'company', value: String(row.companyId) })
+  if (ids.length === 0) return null
+
+  return (
+    <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 px-4 pt-3 lg:px-6">
+      {ids.map((id) => (
+        <span key={id.label} className="inline-flex items-center gap-1.5">
+          <span className="text-[9px] font-medium uppercase tracking-[0.06em] text-muted-foreground/70">
+            {id.label}
+          </span>
+          <span className="font-mono text-[11px] text-foreground/80" title={id.value}>
+            {id.value.length > 12 ? shortId(id.value) : id.value}
+          </span>
+          <CopyButton value={id.value} className="text-muted-foreground/50 hover:text-foreground" />
+        </span>
+      ))}
     </div>
   )
 }
@@ -255,7 +288,7 @@ interface Cadence {
 }
 
 function StatusLine({ row, cadence }: { row: TaskRow; cadence: Cadence | undefined }) {
-  const { kind, fires, errored, lastFireMs, avgDurationMs } = row
+  const { kind, fires, errored, lastFireMs, lastRunAtMs, avgDurationMs } = row
   const errTone =
     errored / Math.max(fires, 1) >= 0.05
       ? ACCENT.rose.status
@@ -279,6 +312,10 @@ function StatusLine({ row, cadence }: { row: TaskRow; cadence: Cadence | undefin
   }
 
   // Cadence: cron / recurring / event / webhook / multi-fire — observed interval + last fire.
+  // lastFireMs is window-scoped (0 when nothing fired in-window); fall back to the
+  // registry's authoritative last-run time so a task that last fired before the window
+  // doesn't render as the Unix epoch.
+  const lastMs = lastFireMs || lastRunAtMs || 0
   return (
     <div className={wrap}>
       {cadence && (
@@ -288,7 +325,13 @@ function StatusLine({ row, cadence }: { row: TaskRow; cadence: Cadence | undefin
         </span>
       )}
       <span>
-        last fire <RelativeTime ts={lastFireMs} />
+        {lastMs > 0 ? (
+          <>
+            last fire <RelativeTime ts={lastMs} />
+          </>
+        ) : (
+          'never fired'
+        )}
       </span>
       <span className={errTone}>{errString(errored, fires)}</span>
     </div>

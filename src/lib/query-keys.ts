@@ -15,6 +15,7 @@ export const queryKeys = {
   },
   tasks: {
     window: (range: string, userId = '') => ['tasks', userId, { range }] as const,
+    runs: (taskId: string) => ['tasks', 'runs', taskId] as const,
   },
   inbox: {
     all: () => ['inbox'] as const,

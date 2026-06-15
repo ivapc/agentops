@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest'
+import { mergeTaskRegistry } from '#/extensions/tasks/merge'
+import type { AgentTaskRegistryEntry } from '#/extensions/tasks/types'
 import type { TraceSummary } from '#/lib/telemetry'
 import { rollupTasks, summarizeRollup } from './rollup'
+
+function entry(over: Partial<AgentTaskRegistryEntry> & { id: string }): AgentTaskRegistryEntry {
+  return { name: 'Task', status: 'active', ownerUserId: 'u', companyId: 1, createdAtMs: 0, updatedAtMs: 0, ...over }
+}
 
 function trace(over: Partial<TraceSummary> & { id: string; startedAtMs: number }): TraceSummary {
   return {
@@ -34,6 +40,16 @@ describe('rollupTasks', () => {
     ]
     const rows = rollupTasks(traces, { fromMs: 0, toMs: 100 })
     expect(rows).toHaveLength(1)
+  })
+
+  it('drops the event_trigger.execute scheduling shell', () => {
+    const traces = [
+      trace({ id: 'a', startedAtMs: 1, taskId: 'job-x', category: 'event' }),
+      trace({ id: 'b', startedAtMs: 2, category: 'event', rootOperation: 'event_trigger.execute' }),
+    ]
+    const rows = rollupTasks(traces, { fromMs: 0, toMs: 100 })
+    expect(rows).toHaveLength(1)
+    expect(rows[0]?.taskId).toBe('job-x')
   })
 
   it('falls back to derived identity when no task.id', () => {
@@ -91,6 +107,11 @@ describe('summarizeRollup', () => {
     expect(s.healthyTasks).toBe(1)
   })
 
+  it('does not count never-fired tasks as healthy', () => {
+    const rows = mergeTaskRegistry([], [entry({ id: 'job-x' })])
+    expect(summarizeRollup(rows).healthyTasks).toBe(0)
+  })
+
   it('returns zeros on empty input', () => {
     const s = summarizeRollup([])
     expect(s).toEqual({
@@ -103,5 +124,38 @@ describe('summarizeRollup', () => {
       taskCount: 0,
       healthyTasks: 0,
     })
+  })
+})
+
+describe('mergeTaskRegistry', () => {
+  it('is a no-op when the registry is empty', () => {
+    const rows = rollupTasks([trace({ id: 'a', startedAtMs: 1, taskId: 'job-x' })], { fromMs: 0, toMs: 10 })
+    expect(mergeTaskRegistry(rows, [])).toBe(rows)
+  })
+
+  it('enriches a fired row with authoritative name + status (case-insensitive id)', () => {
+    const rows = rollupTasks([trace({ id: 'a', startedAtMs: 1, taskId: 'JOB-X', taskName: 'old' })], {
+      fromMs: 0,
+      toMs: 10,
+    })
+    const merged = mergeTaskRegistry(rows, [
+      entry({ id: 'job-x', name: 'Daily report', status: 'paused', totalRuns: 42, succeededRuns: 40 }),
+    ])
+    expect(merged).toHaveLength(1)
+    expect(merged[0]).toMatchObject({
+      name: 'Daily report',
+      taskStatus: 'paused',
+      registered: true,
+      totalRuns: 42,
+      succeededRuns: 40,
+    })
+  })
+
+  it('appends registry tasks that did not fire as zero-fire rows', () => {
+    const rows = rollupTasks([trace({ id: 'a', startedAtMs: 1, taskId: 'job-x' })], { fromMs: 0, toMs: 10 })
+    const merged = mergeTaskRegistry(rows, [entry({ id: 'job-x' }), entry({ id: 'job-z', name: 'Never ran' })])
+    const z = merged.find((r) => r.taskId === 'job-z')
+    expect(z).toMatchObject({ fires: 0, registered: true, name: 'Never ran', identitySource: 'task.id' })
+    expect(z?.sampleTraceId).toBe('')
   })
 })

@@ -249,7 +249,7 @@ export function createAppInsightsProvider(cfg: AppInsightsConfig): AppInsightsPr
             has_chat = countif(gen_op == "chat") > 0,
             root_trigger_type = coalesce(take_anyif(trigger_type, is_root), take_anyif(trigger_type, isnotempty(trigger_type) and name startswith "invoke_agent ")),
             root_execution = coalesce(take_anyif(execution, is_root), take_anyif(execution, isnotempty(execution) and name startswith "invoke_agent ")),
-            root_task_id = take_anyif(task_id, is_root and isnotempty(task_id)),
+            root_task_id = coalesce(take_anyif(task_id, is_root and isnotempty(task_id)), take_anyif(task_id, isnotempty(task_id) and name startswith "invoke_agent ")),
             root_task_kind = take_anyif(task_kind, is_root and isnotempty(task_kind)),
             root_task_schedule = take_anyif(task_schedule, is_root and isnotempty(task_schedule)),
             root_task_name = take_anyif(task_name, is_root and isnotempty(task_name)),

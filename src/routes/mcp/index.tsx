@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
-import { createFileRoute } from '@tanstack/react-router'
+import { createFileRoute, Link } from '@tanstack/react-router'
 import { Box } from 'lucide-react'
 import { Page } from '#/components/page'
 import { RelativeTime } from '#/components/relative-time'
@@ -62,10 +62,16 @@ function McpPage() {
               return (
                 <TableRow key={server.id}>
                   <TableCell>
-                    <div className="flex min-w-0 flex-col">
+                    <Link
+                      to="/mcp/$serverId"
+                      params={{ serverId: server.id }}
+                      className="flex min-w-0 flex-col hover:underline"
+                    >
                       <span className="font-medium">{server.name}</span>
-                      <span className="truncate font-mono text-sm">{server.endpoint ?? server.source}</span>
-                    </div>
+                      <span className="truncate font-mono text-sm text-muted-foreground">
+                        {server.endpoint ?? server.source}
+                      </span>
+                    </Link>
                   </TableCell>
                   <TableCell>{owner}</TableCell>
                   <TableCell className="text-right tabular-nums">{server.tools.length}</TableCell>

@@ -54,11 +54,15 @@ function modelFor(model: string): LanguageModel {
     if (!resourceName && !baseURL) {
       throw new Error('Set AZURE_OPENAI_RESOURCE_NAME (or AZURE_OPENAI_ENDPOINT) to use an Azure OpenAI judge model.')
     }
+    // APIM gateway: auth via Ocp-Apim-Subscription-Key (api-key stays a
+    // placeholder), and it routes the classic deployment URL shape.
+    const apimKey = process.env.AZURE_OPENAI_APIM_KEY
     const azure = createAzure({
       apiKey,
       resourceName,
       baseURL,
       apiVersion: process.env.AZURE_OPENAI_API_VERSION,
+      ...(apimKey ? { headers: { 'Ocp-Apim-Subscription-Key': apimKey }, useDeploymentBasedUrls: true } : {}),
     })
     return azure.responses(model.replace(/^azure\//i, ''))
   }

@@ -13,10 +13,17 @@ type RawServerRef = {
   source?: unknown
 }
 
-export function getRegistrySource(): RegistrySource {
-  return new EnvRegistrySource()
+let registeredSource: RegistrySource | null = null
+
+export function registerRegistrySource(source: RegistrySource): void {
+  registeredSource = source
 }
 
+export function getRegistrySource(): RegistrySource {
+  return registeredSource ?? new EnvRegistrySource()
+}
+
+// Fallback — static JSON from env var (useful for local dev without registry access).
 class EnvRegistrySource implements RegistrySource {
   name = 'env'
 
@@ -32,21 +39,21 @@ class EnvRegistrySource implements RegistrySource {
 }
 
 function normalizeRef(raw: RawServerRef, index: number): McpServerRef {
-  const name = string(raw.name) ?? `server-${index + 1}`
-  const endpoint = string(raw.endpoint) ?? string(raw.url)
+  const name = str(raw.name) ?? `server-${index + 1}`
+  const endpoint = str(raw.endpoint) ?? str(raw.url)
 
   return {
-    id: string(raw.id) ?? `${string(raw.source) ?? 'env'}:${name}`,
+    id: str(raw.id) ?? `${str(raw.source) ?? 'env'}:${name}`,
     name,
     endpoint,
     transport: transport(raw.transport),
-    ownerTeam: string(raw.ownerTeam) ?? string(raw.owner_team),
-    ownerContact: string(raw.ownerContact) ?? string(raw.owner_contact),
-    source: string(raw.source) ?? 'env',
+    ownerTeam: str(raw.ownerTeam) ?? str(raw.owner_team),
+    ownerContact: str(raw.ownerContact) ?? str(raw.owner_contact),
+    source: str(raw.source) ?? 'env',
   }
 }
 
-function string(value: unknown): string | undefined {
+function str(value: unknown): string | undefined {
   return typeof value === 'string' && value.length > 0 ? value : undefined
 }
 

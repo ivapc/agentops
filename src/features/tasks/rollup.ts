@@ -3,6 +3,12 @@ import { FIRE_TRIGGER_TYPES } from '#/lib/telemetry/trace-category'
 
 const FIRE_CATEGORIES: ReadonlySet<TraceCategory> = new Set(FIRE_TRIGGER_TYPES)
 
+// teammate's EventTriggerService emits a scheduling-only shell span (carries
+// trigger_type='event' but no task.id) alongside the real run. It has no task
+// identity, so it would collapse every event task into one `derived:` row and
+// drown the real per-task rows. Drop it.
+const SCHEDULING_SHELL_OPS = new Set(['event_trigger.execute'])
+
 type IdentitySource = 'task.id' | 'cloud-semconv' | 'derived'
 
 export interface TaskIdentity {
@@ -54,6 +60,33 @@ export interface TaskRow {
   conversationId?: string // when all fires share one — surfaced as "Created by"
   spark: SparkPoint[]
   sampleTraceId: string
+  registered?: boolean // matched a row in the AgentTasks registry
+  taskStatus?: 'active' | 'paused' | string // authoritative status from the registry
+  // Authoritative all-time run stats from AgentTaskRuns (survives telemetry
+  // sampling/retention) — distinct from the window-scoped `fires`.
+  totalRuns?: number
+  succeededRuns?: number
+  lastRunStatus?: string
+  lastRunError?: string | null
+  lastRunAtMs?: number
+  // IDs for matching a task to its trigger / owner (from the registry).
+  ownerUserId?: string
+  companyId?: number
+  triggerSourceKind?: string
+  triggerSourceRef?: string
+  createdAtMs?: number
+  updatedAtMs?: number
+  // Event-trigger definition (registry) — for classifying/displaying event tasks.
+  eventType?: string
+  eventTriggerType?: string
+  eventFilters?: string
+}
+
+// "Most recent" for a task list: newest of created / updated / last fire / last
+// run. A task you just created (created = now) sorts to the top even before it
+// fires; a long-standing task that just fired also rises.
+export function taskRecencyMs(r: TaskRow): number {
+  return Math.max(r.lastFireMs || 0, r.lastRunAtMs || 0, r.createdAtMs || 0, r.updatedAtMs || 0)
 }
 
 interface SparkPoint {
@@ -74,7 +107,10 @@ interface RollupOpts {
 // sorted by fires desc. Input is the full trace list — this fn filters to
 // fire categories itself so callers don't have to.
 export function rollupTasks(traces: TraceSummary[], opts: RollupOpts = {}): TaskRow[] {
-  const fires = traces.filter((t) => t.category && FIRE_CATEGORIES.has(t.category))
+  const fires = traces.filter(
+    (t) =>
+      t.category && FIRE_CATEGORIES.has(t.category) && !(t.rootOperation && SCHEDULING_SHELL_OPS.has(t.rootOperation)),
+  )
   if (fires.length === 0) return []
 
   const buckets = opts.buckets ?? 16
@@ -177,7 +213,7 @@ export function summarizeRollup(rows: TaskRow[]): RollupSummary {
     fires += r.fires
     errored += r.errored
     weightedDur += r.avgDurationMs * r.fires
-    if (r.errored === 0) healthyTasks += 1
+    if (r.fires > 0 && r.errored === 0) healthyTasks += 1
   }
   const success = fires - errored
   return {

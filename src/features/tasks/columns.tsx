@@ -5,7 +5,8 @@ import { DataTableColumnHeader } from '#/components/data-table-column-header'
 import { KindBadge } from '#/components/kind-badge'
 import { RelativeTime } from '#/components/relative-time'
 import { Badge } from '#/components/ui/badge'
-import type { TaskRow } from '#/features/tasks/rollup'
+import { eventTriggerView } from '#/extensions/tasks/event'
+import { type TaskRow, taskRecencyMs } from '#/features/tasks/rollup'
 import { formatDuration, formatPercent, metricTone } from '#/lib/format'
 import { ACCENT } from '#/lib/tone'
 import { cn } from '#/lib/utils'
@@ -18,6 +19,26 @@ export const taskColumns: ColumnDef<TaskRow>[] = [
     cell: () => null,
     filterFn: (row, _id, value: string[]) =>
       Array.isArray(value) && value.includes(row.original.errored > 0 ? 'error' : 'ok'),
+    enableSorting: false,
+    enableHiding: false,
+  },
+  {
+    id: 'registryStatus',
+    accessorFn: (r) => registryState(r),
+    header: () => null,
+    cell: () => null,
+    filterFn: (row, _id, value: string[]) =>
+      !Array.isArray(value) || value.length === 0 || value.includes(registryState(row.original)),
+    enableSorting: false,
+    enableHiding: false,
+  },
+  {
+    id: 'triggerSource',
+    accessorFn: (r) => r.triggerSourceKind ?? '',
+    header: () => null,
+    cell: () => null,
+    filterFn: (row, _id, value: string[]) =>
+      !Array.isArray(value) || value.length === 0 || value.includes(row.original.triggerSourceKind ?? ''),
     enableSorting: false,
     enableHiding: false,
   },
@@ -54,6 +75,33 @@ export const taskColumns: ColumnDef<TaskRow>[] = [
               derived
             </Badge>
           )}
+          {r.taskStatus === 'paused' && (
+            <Badge
+              variant="outline"
+              className={cn('shrink-0 px-1.5 text-[10px]', ACCENT.amber.status)}
+              title="Paused in the task registry"
+            >
+              paused
+            </Badge>
+          )}
+          {r.registered && r.fires === 0 && (r.totalRuns ?? 0) === 0 && r.taskStatus !== 'paused' && (
+            <Badge
+              variant="outline"
+              className="shrink-0 px-1.5 text-[10px] text-muted-foreground"
+              title="Registered task that has never run"
+            >
+              never run
+            </Badge>
+          )}
+          {r.kind === 'one_shot' && r.fires > 1 && r.identitySource === 'task.id' && (
+            <Badge
+              variant="outline"
+              className={cn('shrink-0 px-1.5 text-[10px]', ACCENT.amber.status)}
+              title={`One-shot task fired ${r.fires}× — extra fires are retries of the same run`}
+            >
+              retried
+            </Badge>
+          )}
         </div>
       )
     },
@@ -70,6 +118,10 @@ export const taskColumns: ColumnDef<TaskRow>[] = [
         r.source ?? '',
         r.agent ?? '',
         r.serviceName ?? '',
+        r.triggerSourceKind ?? '',
+        r.triggerSourceRef ?? '',
+        r.ownerUserId ?? '',
+        r.conversationId ?? '',
       ]
         .join(' ')
         .toLowerCase()
@@ -78,15 +130,39 @@ export const taskColumns: ColumnDef<TaskRow>[] = [
   },
   {
     id: 'trigger',
-    accessorFn: (r) => r.schedule ?? r.source ?? '',
+    accessorFn: (r) => r.schedule ?? r.source ?? r.triggerSourceKind ?? '',
     header: ({ column }) => <DataTableColumnHeader column={column} title="Trigger" />,
     cell: ({ row }) => {
-      const value = row.original.schedule ?? row.original.source
-      if (!value) return <span className="text-muted-foreground/60">—</span>
+      const r = row.original
+      // Event tasks: show the event type + filter summary, full details on hover.
+      const ev = eventTriggerView(r)
+      if (ev) {
+        return (
+          <div className="flex max-w-[200px] min-w-0 flex-col leading-tight" title={ev.tooltip}>
+            <span className="truncate font-mono text-[11px]">{ev.eventType}</span>
+            {ev.filterSummary && <span className="truncate text-[10px] text-muted-foreground">{ev.filterSummary}</span>}
+          </div>
+        )
+      }
+      const primary =
+        r.schedule ??
+        r.source ??
+        (r.triggerSourceKind ? (TRIGGER_KIND_LABEL[r.triggerSourceKind] ?? r.triggerSourceKind) : undefined)
+      const ref = r.triggerSourceRef
+      if (!primary && !ref) return <span className="text-muted-foreground/60">—</span>
       return (
-        <span className="block max-w-[180px] truncate font-mono text-[11px]" title={value}>
-          {value}
-        </span>
+        <div className="flex max-w-[180px] min-w-0 flex-col leading-tight">
+          {primary && (
+            <span className="truncate font-mono text-[11px]" title={primary}>
+              {primary}
+            </span>
+          )}
+          {ref && (
+            <span className="truncate font-mono text-[10px] text-muted-foreground" title={ref}>
+              {ref}
+            </span>
+          )}
+        </div>
       )
     },
     enableSorting: false,
@@ -140,6 +216,7 @@ export const taskColumns: ColumnDef<TaskRow>[] = [
     header: ({ column }) => <DataTableColumnHeader column={column} title="Success" className="justify-end" />,
     cell: ({ row }) => {
       const r = row.original
+      if (r.fires === 0) return <div className="text-right text-muted-foreground/60">—</div>
       const errRate = 1 - r.successRate
       const tone = errRate >= 0.1 ? ACCENT.rose.status : errRate >= 0.02 ? ACCENT.amber.status : ''
       return <div className={cn('text-right tabular-nums', tone)}>{formatPercent(r.fires - r.errored, r.fires)}</div>
@@ -150,16 +227,54 @@ export const taskColumns: ColumnDef<TaskRow>[] = [
     accessorFn: (r) => r.avgDurationMs,
     header: ({ column }) => <DataTableColumnHeader column={column} title="Avg dur" className="justify-end" />,
     cell: ({ row }) => {
-      const ms = row.original.avgDurationMs
+      const r = row.original
+      if (r.fires === 0) return <div className="text-right text-muted-foreground/60">—</div>
+      const ms = r.avgDurationMs
       return <div className={cn('text-right tabular-nums', metricTone('duration', ms))}>{formatDuration(ms)}</div>
     },
   },
   {
-    accessorKey: 'lastFireMs',
+    id: 'allTime',
+    accessorFn: (r) => r.totalRuns ?? -1,
+    header: ({ column }) => <DataTableColumnHeader column={column} title="All-time" className="justify-end" />,
+    cell: ({ row }) => {
+      const r = row.original
+      if (r.totalRuns == null) return <div className="text-right text-muted-foreground/60">—</div>
+      const lastFailed = !!r.lastRunStatus && r.lastRunStatus.toLowerCase() !== 'succeeded'
+      const title = r.lastRunStatus
+        ? `Last run: ${r.lastRunStatus}${r.lastRunError ? ` — ${r.lastRunError}` : ''}`
+        : undefined
+      return (
+        <div className="text-right tabular-nums" title={title}>
+          <span>{r.totalRuns.toLocaleString()}</span>
+          {r.totalRuns > 0 && (
+            <>
+              <span className="mx-1 text-muted-foreground/40">·</span>
+              <span className={cn('text-[11px]', lastFailed ? ACCENT.rose.status : 'text-muted-foreground')}>
+                {formatPercent(Math.min(r.succeededRuns ?? 0, r.totalRuns), r.totalRuns)}
+              </span>
+            </>
+          )}
+        </div>
+      )
+    },
+  },
+  {
+    id: 'lastFireMs',
+    accessorFn: (r) => taskRecencyMs(r),
     header: ({ column }) => <DataTableColumnHeader column={column} title="Last fire" />,
-    cell: ({ row }) => (
-      <RelativeTime ts={row.original.lastFireMs} className="whitespace-nowrap tabular-nums text-muted-foreground" />
-    ),
+    cell: ({ row }) => {
+      const r = row.original
+      if (r.lastFireMs > 0)
+        return <RelativeTime ts={r.lastFireMs} className="whitespace-nowrap tabular-nums text-muted-foreground" />
+      if (r.createdAtMs)
+        return (
+          <span className="whitespace-nowrap tabular-nums text-muted-foreground/60">
+            created <RelativeTime ts={r.createdAtMs} />
+          </span>
+        )
+      return <span className="text-muted-foreground/60">never</span>
+    },
   },
   {
     id: 'createdBy',
@@ -184,6 +299,20 @@ export const taskColumns: ColumnDef<TaskRow>[] = [
     enableSorting: false,
   },
 ]
+
+export const TRIGGER_KIND_LABEL: Record<string, string> = {
+  Schedule: 'schedule',
+  WorkflowEvent: 'event',
+  Channel: 'channel',
+  ChainStep: 'chain step',
+}
+
+function registryState(r: TaskRow): 'active' | 'paused' | 'never_run' | '' {
+  if (r.taskStatus === 'paused') return 'paused'
+  if (r.registered && (r.totalRuns ?? 0) === 0) return 'never_run'
+  if (r.registered) return 'active'
+  return ''
+}
 
 function deriveLabel(key: string): string {
   const [, rest] = key.split(':', 2)

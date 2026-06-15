@@ -1,6 +1,8 @@
 import { registerEnrichmentSource } from '#/features/inspect/server/enrich-span'
+import { registerRegistrySource } from '#/features/mcp'
 import { registerExtension } from '#/lib/extension-registry'
 import { cosmosExtension } from './cosmos-extension'
+import { AzureTableRegistrySource, isAzureTableRegistryConfigured } from './mcp-registry'
 
 let done = false
 
@@ -15,5 +17,8 @@ export function registerExtensions(): void {
   const resolve = cosmosExtension.resolveTruncatedAttr
   if (resolve) {
     registerEnrichmentSource({ name: cosmosExtension.name, resolve })
+  }
+  if (isAzureTableRegistryConfigured()) {
+    registerRegistrySource(new AzureTableRegistrySource())
   }
 }
